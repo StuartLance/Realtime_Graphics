@@ -16,9 +16,10 @@ namespace GFX
 namespace SCN {
 
 	enum eAlphaMode {
-		NO_ALPHA,
-		MASK,
-		BLEND
+		NO_ALPHA, // For things like opaque objects
+		MASK, // For things like leaves
+		BLEND // For things like glass
+		// Separate the rendering of the object into two parts: the opaque part and the transparent part. Or 3
 	};
 
 	struct Sampler {
