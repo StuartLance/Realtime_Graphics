@@ -77,7 +77,7 @@ public:
 	float getProjectedScale(Vector3f pos3D, float radius); //used to know how big one unit will look at this distance
 	Vector3f getRayDirection(int mouse_x, int mouse_y, float window_width, float window_height);
 
-	//culling
+	//culling - Extra point here?
 	bool testPointInFrustum( Vector3f v );
 	char testSphereInFrustum( const Vector3f& v, float radius);
 	char testBoxInFrustum( const Vector3f& center, const Vector3f& halfsize );
