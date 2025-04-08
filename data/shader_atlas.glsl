@@ -90,6 +90,11 @@ void main()
 
 #version 330 core
 
+uniform float u_shininess;
+uniform float u_specular_strength;
+uniform vec3 u_ambient_color;
+uniform vec3 u_camera_position;
+
 in vec3 v_position;
 in vec3 v_world_position;
 in vec3 v_normal;
@@ -101,19 +106,47 @@ uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 
+uniform vec3 u_light_pos[10];
+uniform vec3 u_light_color[10];
+uniform float u_light_intensity[10];
+uniform int u_light_count; // Put where the 4 is
+
+
 out vec4 FragColor;
 
 void main()
 {
 	vec2 uv = v_uv;
 	vec4 color = u_color;
-	color *= texture( u_texture, v_uv );
+	color *= texture(u_texture, v_uv);
 
 	if(color.a < u_alpha_cutoff)
 		discard;
 
-	FragColor = color;
+	vec3 N = normalize(v_normal);
+	vec3 V = normalize(u_camera_position - v_world_position); // View direction
+	vec3 total_light = vec3(0.0);
+
+	for (int i = 0; i < u_light_count; ++i) {
+		vec3 L = normalize(u_light_pos[i] - v_world_position); // FROM point TO light
+		vec3 R = reflect(-L, N); // Reflection direction
+
+		// Diffuse
+		float diff = max(dot(N, L), 0.0);
+
+		// Specular
+		float spec = pow(max(dot(R, V), 0.0), u_shininess); // u_shininess is a uniform (e.g., 32.0)
+
+		vec3 light_color = u_light_color[i] * u_light_intensity[i];
+		total_light += (diff + spec * u_specular_strength) * light_color;
+	}
+
+	vec3 ambient = u_ambient_color * color.rgb;
+
+	vec3 final_color = ambient + total_light * color.rgb;
+	FragColor = vec4(final_color, color.a);
 }
+
 
 
 \skybox.fs

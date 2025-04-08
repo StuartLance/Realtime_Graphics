@@ -95,6 +95,9 @@ void Material::bind(GFX::Shader* shader) {
 			texture = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
 
 		shader->setUniform("u_color", color);
+		shader->setUniform("u_shininess", shininess);
+		shader->setUniform("u_specular_strength", specular_strength);
+
 
 		if (texture)
 			shader->setUniform("u_texture", texture, 0);

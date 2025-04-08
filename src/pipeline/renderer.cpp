@@ -26,8 +26,26 @@ struct sDrawCommand {
 };
 
 std::vector<sDrawCommand> draw_command_list; // Contains all the entities to be drawn
+std::vector<sDrawCommand> opaqueObjects;
+std::vector<sDrawCommand> transparentObjects;
+std::vector<SCN::LightEntity*> light_list; // Contains all the lights in the scene
 
 using namespace SCN;
+
+struct compareDrawCommands { // Functor for sorting opaque draw commands by distance
+	Camera* camera;
+
+	compareDrawCommands(Camera* cam) : camera(cam) {}
+
+	bool operator()(const sDrawCommand& a, const sDrawCommand& b) const {
+		// Only compare distance from camera (assumes both are opaque)
+		float distanceA = camera->eye.distance(Vector3f(a.model.m[12], a.model.m[13], a.model.m[14]));
+		float distanceB = camera->eye.distance(Vector3f(b.model.m[12], b.model.m[13], b.model.m[14]));
+		return distanceA < distanceB; // Draw nearer objects first
+	}
+};
+
+
 
 //some globals
 GFX::Mesh sphere;
@@ -74,6 +92,12 @@ void parseNodes(SCN::Node* node, Camera* cam) {
 	}
 }
 
+void parseLights(SCN::Node* node, Camera* cam) {
+	if (!node) {
+		return;
+	}
+}
+
 void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	// HERE =====================
 	// TODO: GENERATE RENDERABLES
@@ -81,6 +105,8 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 
 	//Clean the list of draw commands
 	draw_command_list.clear();
+	light_list.clear(); // <- clear light list before filling it again
+
 
 	for (int i = 0; i < scene->entities.size(); i++) {
 		BaseEntity* entity = scene->entities[i];
@@ -90,10 +116,12 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 		}
 
 		if (entity->getType() == eEntityType::PREFAB) { // Only render prefabs here
-			PrefabEntity* prefab_entt = (PrefabEntity*)entity; // Cast to prefab entity - can now use prefab entity functions
-			Prefab* prefab = prefab_entt->prefab; // Get prefab from prefab entity
 
-			parseNodes(&prefab->root, cam); // Parse nodes of prefab using recursive function
+			parseNodes(&(((PrefabEntity*)entity)->root), cam);// Parse nodes of prefab using recursive function
+		}
+		else if (entity->getType() == eEntityType::LIGHT) {
+			//BaseEntity* light = (BaseEntity*)&entity;
+			light_list.push_back((LightEntity*)entity);
 		}
 		// Store Prefab Entitys
 		// ...
@@ -107,6 +135,9 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 {
+	opaqueObjects.clear();
+	transparentObjects.clear();
+
 	this->scene = scene;
 	setupScene();
 
@@ -127,7 +158,33 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// TODO: RENDER RENDERABLES
 	// ==========================
 
-	for (sDrawCommand command : draw_command_list) {
+	for (const sDrawCommand& command : draw_command_list) {
+		if (command.material->alpha_mode == eAlphaMode::NO_ALPHA) {
+			opaqueObjects.push_back(command);
+		}
+		else {
+			transparentObjects.push_back(command);
+		}
+	}
+
+	// Sort opaque objects normally
+	std::sort(opaqueObjects.begin(), opaqueObjects.end(), compareDrawCommands(camera));
+
+	// Sort transparent objects by distance (farther objects first)
+	std::sort(transparentObjects.begin(), transparentObjects.end(),
+		[camera](const sDrawCommand& a, const sDrawCommand& b) {
+			float distanceA = camera->eye.distance(Vector3f(a.model.m[12], a.model.m[13], a.model.m[14]));
+			float distanceB = camera->eye.distance(Vector3f(b.model.m[12], b.model.m[13], b.model.m[14]));
+			return distanceA > distanceB; // Farther objects should be drawn first
+		});
+
+	// Render opaque objects first
+	for (const sDrawCommand& command : opaqueObjects) {
+		renderMeshWithMaterial(command.model, command.mesh, command.material);
+	}
+
+	// Render transparent objects after
+	for (const sDrawCommand& command : transparentObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material);
 	}
 }
@@ -199,12 +256,40 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	material->bind(shader);
 
+	// Send LIGHTS
+	vec3* light_pos = new vec3[light_list.size()]; // Dynamic array to store light positions
+	vec3* light_color = new vec3[light_list.size()]; // Dynamic array to store light colours
+	float* light_intensity = new float[light_list.size()]; // Dynamic array to store light intensities
+	vec3* light_dir = new vec3[light_list.size()]; // Dynamic array to store light directions
+	// Analyse things ...
+	// Send lights to shader GPU
+	int i = 0u;// Light counter
+	for (LightEntity* light : light_list) {
+		light_pos[i] = light->root.getGlobalMatrix().getTranslation();
+		light_intensity[i] = light->intensity;
+		light_color[i] = light->color;
+		light_dir[i] = light->root.getGlobalMatrix().rotateVector(vec3(0, 0, -1)); // Get forward direction
+		//light_dir[i] = light->root.frontVector();
+		i++;
+	}
+	
+
+	shader->setUniform3Array("u_light_pos", (float*)light_pos, min(light_list.size(), 10));
+	shader->setUniform3Array("u_light_color", (float*)light_color, min(light_list.size(), 10));
+	shader->setUniform1Array("u_light_intensity", (float*)light_intensity, min(light_list.size(), 10));
+
+	delete[] light_pos; // Free memory - no memory leaks
+	delete[] light_color; // Free memory - no memory leaks
+	delete[] light_intensity; // Free memory - no memory leaks
+	delete[] light_dir; // Free memory - no memory leaks
+
 	//upload uniforms
 	shader->setUniform("u_model", model);
 
 	// Upload camera uniforms
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
 	shader->setUniform("u_camera_position", camera->eye);
+	shader->setUniform("u_light_count", (int)light_list.size());
 
 	// Upload time, for cool shader effects
 	float t = getTime();
