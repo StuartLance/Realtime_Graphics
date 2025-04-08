@@ -59,40 +59,10 @@ void Renderer::setupScene()
 		skybox_cubemap = nullptr;
 }
 
-void parseNodes(SCN::Node* node, Camera* cam) {
-	if (!node) {
-		return;
-	}
-	// Maybe there is camera here for (extra) frustrum culling purposes
-	if (node->mesh) {
-		sDrawCommand draw_com; // Create draw command
-		draw_com.mesh = node->mesh; // Set mesh to prefab root mesh
-		draw_com.material = node->material; // Set material to prefab root material
-		draw_com.model = node->getGlobalMatrix(); // I have no idea what this part is
-
-		if (node->material->alpha_mode == (eAlphaMode::BLEND || eAlphaMode::MASK)) {
-			translucent_draw_command_list.push_back(draw_com); // Add draw command to list
-		}
-		else {
-			opaque_draw_command_list.push_back(draw_com); // Add draw command to list
-		}
-		
-		//draw_command_list.push_back(draw_com); // Add draw command to list
-	}
-
-	for (SCN::Node* child : node->children) {
-		parseNodes(child, cam); // Recursively parse children
-	}
-}
-
 void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	// HERE =====================
 	// TODO: GENERATE RENDERABLES
 	// ==========================
-
-	//Clean the list of draw commands
-	opaque_draw_command_list.clear();
-	translucent_draw_command_list.clear();
 
 	for (int i = 0; i < scene->entities.size(); i++) {
 		BaseEntity* entity = scene->entities[i];
@@ -101,11 +71,6 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 			continue;
 		}
 
-		if (entity->getType() == eEntityType::PREFAB) {
-			// CORRECT: this will add to the scene all the node hierachy correctly and since we are starting with the entity root at the top of
-			//   the hierachy it will have a world transform
-			parseNodes(&(((PrefabEntity*)entity)->root), cam);
-		}
 		// Store Prefab Entitys
 		// ...
 		//		Store Children Prefab Entities
@@ -115,25 +80,6 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	}
 	
 }
-
-// Used in the sorting alg when rendeering, so that glass doesn't block rendering of objects behind
-//bool compareDrawCommands(const sDrawCommand& a, const sDrawCommand& b, Camera* camera) 
-//{
-//    if (a.material->alpha_mode == eAlphaMode::BLEND && b.material->alpha_mode == eAlphaMode::NO_ALPHA) {
-//        return false; // Render BLEND after NO_ALPHA
-//    } 
-//	else if (a.material->alpha_mode == eAlphaMode::NO_ALPHA && b.material->alpha_mode == eAlphaMode::BLEND) {
-//        return true; // Render NO_ALPHA before BLEND
-//    } 
-//	else { // When they have the same Alpha
-//        // Render based on distance from camera
-//        float distanceA = camera->eye.distance(Vector3f(a.model.m[12], a.model.m[13], a.model.m[14]));
-//        float distanceB = camera->eye.distance(Vector3f(b.model.m[12], b.model.m[13], b.model.m[14]));
-//        return distanceA < distanceB;
-//    }
-//}
-
-// Struct compareDrawCommands is now in separate file compareDrawCommands.h
 
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 {
@@ -156,28 +102,6 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// HERE =====================
 	// TODO: RENDER RENDERABLES
 	// ==========================
-
-    #include <algorithm> //sort
-
-    // ...
-
-    // Compare function for sorting draw commands based on alpha mode
-	//std::sort(draw_command_list.begin(), draw_command_list.end(), compareDrawCommands(camera)); // Sort draw commands
-
-	std::sort(opaque_draw_command_list.begin(), opaque_draw_command_list.end(), compareDrawCommands(camera, eAlphaMode::NO_ALPHA)); // Sort draw commands
-	std::sort(translucent_draw_command_list.begin(), translucent_draw_command_list.end(), compareDrawCommands(camera, eAlphaMode::BLEND)); // Sort draw commands
-	// 
-
-
-	// Render all draw commands
-
-	
-	for (sDrawCommand command : opaque_draw_command_list) {
-            renderMeshWithMaterial(command.model, command.mesh, command.material);
-        }
-	for (sDrawCommand command : translucent_draw_command_list) {
-		renderMeshWithMaterial(command.model, command.mesh, command.material);
-	}
 }
 
 
