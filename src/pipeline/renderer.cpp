@@ -1,5 +1,4 @@
 #include "renderer.h"
-#include "compareDrawCommands.h"
 
 #include <algorithm> //sort
 
@@ -18,7 +17,7 @@
 
 #include "scene.h"
 
-// Struct for rendering entity [Further Labs need to add more to this struct]
+
 struct sDrawCommand {
 	GFX::Mesh* mesh; // Contains the geometry of the entity
 	SCN::Material* material; // Material in scene not GFX. Is the recipe for putting together the surafce
@@ -26,10 +25,7 @@ struct sDrawCommand {
 
 };
 
-//std::vector<sDrawCommand> draw_command_list; // Contains all the entities to be drawn
-
-std::vector<sDrawCommand> translucent_draw_command_list; // Contains all the translucent entities to be drawn
-std::vector<sDrawCommand> opaque_draw_command_list; // Contains all opaque entities to be drawn
+std::vector<sDrawCommand> draw_command_list; // Contains all the entities to be drawn
 
 using namespace SCN;
 
@@ -59,10 +55,32 @@ void Renderer::setupScene()
 		skybox_cubemap = nullptr;
 }
 
+void parseNodes(SCN::Node* node, Camera* cam) {
+	if (!node) {
+		return;
+	}
+	// Maybe there is camera here for (extra) frustrum culling purposes
+	if (node->mesh) {
+		sDrawCommand draw_com; // Create draw command
+		draw_com.mesh = node->mesh; // Set mesh to prefab root mesh
+		draw_com.material = node->material; // Set material to prefab root material
+		draw_com.model = node->getGlobalMatrix(); // I have no idea what this part is
+
+		draw_command_list.push_back(draw_com); // Add draw command to list
+	}
+
+	for (SCN::Node* child : node->children) {
+		parseNodes(child, cam); // Recursively parse children
+	}
+}
+
 void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	// HERE =====================
 	// TODO: GENERATE RENDERABLES
 	// ==========================
+
+	//Clean the list of draw commands
+	draw_command_list.clear();
 
 	for (int i = 0; i < scene->entities.size(); i++) {
 		BaseEntity* entity = scene->entities[i];
@@ -71,6 +89,12 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 			continue;
 		}
 
+		if (entity->getType() == eEntityType::PREFAB) { // Only render prefabs here
+			PrefabEntity* prefab_entt = (PrefabEntity*)entity; // Cast to prefab entity - can now use prefab entity functions
+			Prefab* prefab = prefab_entt->prefab; // Get prefab from prefab entity
+
+			parseNodes(&prefab->root, cam); // Parse nodes of prefab using recursive function
+		}
 		// Store Prefab Entitys
 		// ...
 		//		Store Children Prefab Entities
@@ -102,6 +126,10 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// HERE =====================
 	// TODO: RENDER RENDERABLES
 	// ==========================
+
+	for (sDrawCommand command : draw_command_list) {
+		renderMeshWithMaterial(command.model, command.mesh, command.material);
+	}
 }
 
 
