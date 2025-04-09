@@ -64,7 +64,7 @@ namespace SCN {
 		float roughness_factor;	//how smooth or rough is the surface
 		float metallic_factor;	//how metallic is the surface
 		Vector3f emissive_factor;//does this object emit light?
-		float shininess = 32.0f;          // Default Phong shininess
+		float shininess = 12.0f;          // Default Phong shininess
 		float specular_strength = 0.5f;   // Strength of the specular highlight
 
 		//textures

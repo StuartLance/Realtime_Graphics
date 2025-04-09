@@ -261,6 +261,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	vec3* light_color = new vec3[light_list.size()]; // Dynamic array to store light colours
 	float* light_intensity = new float[light_list.size()]; // Dynamic array to store light intensities
 	vec3* light_dir = new vec3[light_list.size()]; // Dynamic array to store light directions
+	int* light_type = new int[4];
 	// Analyse things ...
 	// Send lights to shader GPU
 	int i = 0u;// Light counter
@@ -269,19 +270,24 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		light_intensity[i] = light->intensity;
 		light_color[i] = light->color;
 		light_dir[i] = light->root.getGlobalMatrix().rotateVector(vec3(0, 0, -1)); // Get forward direction
+		light_type[i] = static_cast<int>(light->light_type);
 		//light_dir[i] = light->root.frontVector();
 		i++;
 	}
 	
 
+
 	shader->setUniform3Array("u_light_pos", (float*)light_pos, min(light_list.size(), 10));
 	shader->setUniform3Array("u_light_color", (float*)light_color, min(light_list.size(), 10));
 	shader->setUniform1Array("u_light_intensity", (float*)light_intensity, min(light_list.size(), 10));
+	shader->setUniform1Array("u_light_type", light_type, min(light_list.size(), 10));
+	shader->setUniform3Array("u_light_dir", (float*)light_dir, min(light_list.size(), 10));
 
 	delete[] light_pos; // Free memory - no memory leaks
 	delete[] light_color; // Free memory - no memory leaks
 	delete[] light_intensity; // Free memory - no memory leaks
 	delete[] light_dir; // Free memory - no memory leaks
+	delete[] light_type; // Free memory - no memory leaks
 
 	//upload uniforms
 	shader->setUniform("u_model", model);

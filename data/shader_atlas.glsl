@@ -110,6 +110,8 @@ uniform vec3 u_light_pos[10];
 uniform vec3 u_light_color[10];
 uniform float u_light_intensity[10];
 uniform int u_light_count; // Put where the 4 is
+uniform int u_light_type[10]; // 0 = point, 1 = directional
+uniform vec3 u_light_dir[10]; // direction for directional lights
 
 
 out vec4 FragColor;
@@ -128,18 +130,31 @@ void main()
 	vec3 total_light = vec3(0.0);
 
 	for (int i = 0; i < u_light_count; ++i) {
-		vec3 L = normalize(u_light_pos[i] - v_world_position); // FROM point TO light
-		vec3 R = reflect(-L, N); // Reflection direction
+    		vec3 L;
+    		float attenuation = 1.0;
 
-		// Diffuse
-		float diff = max(dot(N, L), 0.0);
+    		if (u_light_type[i] == 0) {
+        		// Point light
+        		vec3 lightVector = u_light_pos[i] - v_world_position;
+        		L = normalize(lightVector);
+        		float distance = length(lightVector);
+        		attenuation = 1.0 / (distance * distance); // optional: tweak this
+    		} else if (u_light_type[i] == 1) {
+        	// Directional light
+        		L = normalize(-u_light_dir[i]); // light coming *from* direction
+        		attenuation = 1.0;
+   	 	} else if (u_light_type[i] == 2) {
+    			// Spotlight logic
+		}
+	
+    		vec3 R = reflect(-L, N);
+    		float diff = max(dot(N, L), 0.0);
+    		float spec = pow(max(dot(R, V), 0.0), u_shininess);
 
-		// Specular
-		float spec = pow(max(dot(R, V), 0.0), u_shininess); // u_shininess is a uniform (e.g., 32.0)
-
-		vec3 light_color = u_light_color[i] * u_light_intensity[i];
-		total_light += (diff + spec * u_specular_strength) * light_color;
+    		vec3 light_color = u_light_color[i] * u_light_intensity[i];
+    		total_light += attenuation * (diff + spec * u_specular_strength) * light_color;
 	}
+
 
 	vec3 ambient = u_ambient_color * color.rgb;
 
