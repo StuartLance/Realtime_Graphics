@@ -13,6 +13,8 @@ namespace GFX {
 	class FBO;
 }
 
+
+
 namespace SCN {
 
 	class Prefab;
@@ -47,7 +49,7 @@ namespace SCN {
 		void renderSkybox(GFX::Texture* cubemap);
 
 		//to render one mesh given its material and transformation matrix
-		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, bool opaqueness);
 
 		void showUI();
 	};
