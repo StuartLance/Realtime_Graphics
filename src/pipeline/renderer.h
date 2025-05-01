@@ -48,6 +48,8 @@ namespace SCN {
 		//render the skybox
 		void renderSkybox(GFX::Texture* cubemap);
 
+		void setUniform(GFX::Shader* shader);
+
 		//to render one mesh given its material and transformation matrix
 		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, bool opaqueness);
 

@@ -26,6 +26,9 @@ void SceneEditor::renderDebug(Camera* camera)
 
 	//in case you want to draw something for debug
 	//...
+	
+
+	
 }
 
 void SceneEditor::render(Camera* camera)
@@ -125,6 +128,8 @@ void SceneEditor::render(Camera* camera)
 			if (!was_used && used)
 				saveUndo();
 			was_used = used;
+
+
 		}
 	}
 	ImGui::End();
@@ -231,6 +236,17 @@ void SceneEditor::render(Camera* camera)
 		case SCN::eEntityType::NONE: inspectEntity((SCN::UnknownEntity*)ent); break;
 		default: inspectEntity(ent); break;
 		}
+
+		// Add shininess slider for the material 
+		if (ent->getType() == SCN::eEntityType::PREFAB)
+		{
+			SCN::PrefabEntity* prefab = static_cast<SCN::PrefabEntity*>(ent);
+			if (prefab->root.material)
+			{
+				float& shininess = prefab->root.material->shininess; // Access shininess
+				ImGui::SliderFloat("Shininess", &shininess, 0.0f, 128.0f, "%.1f");
+			}
+		}
 	}
 	else
 	{
@@ -319,6 +335,9 @@ void SceneEditor::inspectEntity(SCN::BaseEntity* entity)
 		entity->name = buff;
 	ImGui::Text("Type: %s", entity->getTypeAsStr());
 	ImGui::Checkbox("Visible", &entity->visible);
+
+	
+
 	UI::Layers("Layers", &entity->layers);
 
 	UI::inspectObject(entity->root.model);//Model edit

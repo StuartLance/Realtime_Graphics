@@ -106,3 +106,4 @@ void Material::bind(GFX::Shader* shader) {
 		shader->setUniform("u_alpha_cutoff", alpha_mode == SCN::eAlphaMode::MASK ? alpha_cutoff : 0.001f);
 	}
 }
+

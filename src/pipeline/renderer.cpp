@@ -24,7 +24,7 @@ struct sDrawCommand {
 	Matrix44 model; // Contains location of entity
 
 };
-int multipass_on = 0; //used to know if we are in the first pass or not
+bool multipass_on = false; //used to know if we are in the first pass or not
 
 std::vector<sDrawCommand> draw_command_list; // Contains all the entities to be drawn
 std::vector<sDrawCommand> opaqueObjects;
@@ -292,67 +292,65 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		i++;
 	}
 	
-	if (multipass_on) {
-		shader->setUniform("u_multipass", 1);
-		glDepthFunc(GL_LEQUAL);
+    if (multipass_on) {
+        
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL); 
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        for (int i = 0; i < light_list.size(); i++) {
+            if (i == 0) {
+                if (opaqueness)
+                    glDisable(GL_BLEND);
+                else
+                    glEnable(GL_BLEND);
+            } else {
+                glEnable(GL_BLEND);
+            }
+			shader->setUniform("u_multipass", 1);
 
-		for (int i = 0; i < light_list.size(); i++) {
-			if (i == 0)
-				if (opaqueness)
-					glDisable(GL_BLEND);
-				else
-					glEnable(GL_BLEND);
-			else
-				glEnable(GL_BLEND);
-			shader->setUniform("u_multi_light_pos", light_pos[i]);
-			shader->setUniform("u_multi_light_color", light_color[i]);
-			shader->setUniform("u_multi_light_intensity", light_intensity[i]);
-			shader->setUniform("u_multi_light_dir", light_dir[i]);
-			shader->setUniform("u_multi_type", light_type[i]);
-			shader->setUniform("u_alpha_min", alpha_min);
-			shader->setUniform("u_alpha_max", alpha_max);
-			shader->setUniform("u_light_index", i);
-			shader->setUniform("u_light_count", (int)min(light_list.size(), 10));
+            // Set only the light at index 0, shader will use it
+            shader->setUniform("u_light_pos", light_pos[i]);
+            shader->setUniform("u_light_color", light_color[i]);
+            shader->setUniform("u_light_intensity", light_intensity[i]);
+            shader->setUniform("u_light_dir", light_dir[i]);
+            shader->setUniform("u_light_type", light_type[i]);
+            shader->setUniform("u_alpha_min", alpha_min);
+            shader->setUniform("u_alpha_max", alpha_max);
+            shader->setUniform("u_light_index", i);
+            shader->setUniform("u_light_count", 1); // just one light per pass
 
-			if (i != 0)
-				shader->setUniform("u_ambient_color", vec3(0.f, 0.f, 0.f));
-			else
-				shader->setUniform("u_ambient_color", Scene::instance->ambient_light);
+            shader->setUniform("u_ambient_color", (i == 0) ? Scene::instance->ambient_light : vec3(0.f));
 
-			//upload uniforms
-			shader->setUniform("u_model", model);
+            // Upload matrices and other uniforms
+            shader->setUniform("u_model", model);
+            shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+            shader->setUniform("u_camera_position", camera->eye);
+            float t = getTime();
+            shader->setUniform("u_time", t);
+            
+            if (render_wireframe)
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-			// Upload camera uniforms
-			shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
-			shader->setUniform("u_camera_position", camera->eye);
+            mesh->render(GL_TRIANGLES);
+        }
 
-			float t = getTime();
-			shader->setUniform("u_time", t);
+        glDisable(GL_BLEND);
+        glDepthFunc(GL_LESS);
+    }
 
-			// Render just the verticies as a wireframe
-			if (render_wireframe)
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-			//do the draw call that renders the mesh into the screen
-			mesh->render(GL_TRIANGLES);
-		}
-		glDisable(GL_BLEND);
-		glDepthFunc(GL_LESS);
-	}
 	else { // Single pass
 		shader->setUniform("u_multipass", 0);
-		shader->setUniform3Array("u_light_pos", (float*)light_pos, min(light_list.size(), 10));
-		shader->setUniform3Array("u_light_color", (float*)light_color, min(light_list.size(), 10));
-		shader->setUniform1Array("u_light_intensity", (float*)light_intensity, min(light_list.size(), 10));
-		shader->setUniform3Array("u_light_dir", (float*)light_dir, min(light_list.size(), 10));
-		shader->setUniform1Array("u_light_type", light_type, min(light_list.size(), 10));
-		shader->setUniform1Array("u_light_shadow_index", light_shadow_map_index, min(light_list.size(), 10));
+		shader->setUniform3Array("u_light_pos", (float*)light_pos, fmin(light_list.size(), 10));
+		shader->setUniform3Array("u_light_color", (float*)light_color, fmin(light_list.size(), 10));
+		shader->setUniform1Array("u_light_intensity", (float*)light_intensity, fmin(light_list.size(), 10));
+		shader->setUniform3Array("u_light_dir", (float*)light_dir, fmin(light_list.size(), 10));
+		shader->setUniform1Array("u_light_type", light_type, fmin(light_list.size(), 10));
+		shader->setUniform1Array("u_light_shadow_index", light_shadow_map_index, fmin(light_list.size(), 10));
 		shader->setUniform("u_alpha_min", alpha_min);
 		shader->setUniform("u_alpha_max", alpha_max);
 				//shader->setUniform("u_shadow_bias", shadow_bias);
-		shader->setUniform("u_light_count", (int)min(light_list.size(), 10));
+		shader->setUniform("u_light_count", (int)fmin(light_list.size(), 10));
 
 		shader->setUniform("u_ambient_color", Scene::instance->ambient_light);
 
@@ -397,9 +395,15 @@ void Renderer::showUI()
 		
 	ImGui::Checkbox("Wireframe", &render_wireframe);
 	ImGui::Checkbox("Boundaries", &render_boundaries);
+    
 
 	//add here your stuff
 	//...
+    ImGui::Text("Lighting Mode");
+    if (ImGui::Checkbox("Use Multipass", &multipass_on)) {
+        // Optional: trigger updates when toggled
+    }
+
 }
 
 #else
