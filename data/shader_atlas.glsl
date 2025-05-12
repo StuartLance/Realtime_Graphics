@@ -75,6 +75,21 @@ void main()
     FragColor = u_color;
 }
 
+\gbuffer_fill.fs
+
+#version 330 core
+
+void main(){
+
+
+
+    // This replaces the out vec4 FragColor:
+    layout(location = 0) out vec4 gbuffer_albedo;
+    layout(location = 1) out vec4 gbuffer_normal_mat;
+}
+
+    
+
 
 \texture.fs
 
@@ -161,6 +176,9 @@ void main()
     texture_normal = (texture_normal * 2.0) - 1.0;
     vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
     N = normal;
+
+    gbuffer_normal_mat = vec4(N, 1.0); // Store normal in gbuffer
+    gbuffer_albedo = color; // Store albedo in gbuffer -- Maybe use final_color instead 
 
     vec3 total_diff = vec3(0.0);
     vec3 total_spec = vec3(0.0);

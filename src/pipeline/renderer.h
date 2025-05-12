@@ -29,11 +29,15 @@ namespace SCN {
 		bool render_boundaries;
 
 		GFX::Texture* skybox_cubemap;
-
+		Vector2ui screen;
 		SCN::Scene* scene;
+
+		GFX::FBO gbuffer_fbo;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
+
+		void initGBuffer();
 
 		//just to be sure we have everything ready for the rendering
 		void setupScene();

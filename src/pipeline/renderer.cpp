@@ -48,6 +48,8 @@ struct compareDrawCommands { // Functor for sorting opaque draw commands by dist
 	}
 };
 
+// GFX::FBO* shadow_map_fbo = nullptr; // FBO for shadow mapping
+
 
 
 //some globals
@@ -68,12 +70,28 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.uploadToVRAM();
 }
 
+void Renderer::initGBuffer() {
+	Vector2ui screen = CORE::getWindowSize();
+
+	// Create the GBuffer FBO
+
+	gbuffer_fbo.create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
+
+	gbuffer_fbo.bind();
+	//gbuffer_fbo.enableAllBuffers();
+	gbuffer_fbo.unbind();
+
+}
+
 void Renderer::setupScene()
 {
 	if (scene->skybox_filename.size())
 		skybox_cubemap = GFX::Texture::Get(std::string(scene->base_folder + "/" + scene->skybox_filename).c_str());
 	else
 		skybox_cubemap = nullptr;
+	
+	// gbuffer_fbo.create(BaseApplication , )
 }
 
 void parseNodes(SCN::Node* node, Camera* cam) {
@@ -181,10 +199,15 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			return distanceA > distanceB; // Farther objects should be drawn first
 		});
 
+	gbuffer_fbo.bind();
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 	// Render opaque objects first
 	for (const sDrawCommand& command : opaqueObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material, true);
 	}
+
+	gbuffer_fbo.unbind();
 
 	// Render transparent objects after
 	for (const sDrawCommand& command : transparentObjects) {
