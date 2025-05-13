@@ -159,7 +159,7 @@ vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
     return normalize(TBN * normal_pixel);
 }
 
-void main()
+void single_multi()
 {
     vec2 uv = v_uv;
     vec4 color = u_color;
@@ -276,6 +276,44 @@ void main()
 
     vec3 final_color = ambient + total_diff * color.rgb + total_spec;
     FragColor = vec4(final_color, color.a);
+}
+
+
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
+
+void gBuffer()
+{
+    vec2 uv = v_uv;
+    vec4 color = u_color;
+    color *= texture(u_texture, v_uv);
+
+    if (color.a < u_alpha_cutoff)
+        discard;
+
+    // Tangent space normal mapping
+    vec3 texture_normal = texture(u_normal_map, uv).xyz;
+    texture_normal = (texture_normal * 2.0) - 1.0;
+    vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
+    vec3 N = normal;
+
+    gbuffer_normal_mat = vec4(N, 1.0); // Store normal in gbuffer
+    gbuffer_albedo = color; // Store albedo in gbuffer -- Maybe use final_color instead 
+}
+
+void main()
+{
+    switch(u_lab) {
+        case 1:
+            single_multi(); // Single and multi pass - No GBuffer
+            break;
+        case 2:
+            gBuffer(); // GBuffer pass 
+            break;
+        default:
+            single_multi();
+            break;
+    }
 }
 
 

@@ -28,6 +28,8 @@ namespace SCN {
 		bool render_wireframe;
 		bool render_boundaries;
 
+		int lab;
+
 		GFX::Texture* skybox_cubemap;
 		Vector2ui screen;
 		SCN::Scene* scene;

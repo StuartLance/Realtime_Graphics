@@ -62,6 +62,8 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 
+	lab = 1; // Change here or with action 
+
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -198,7 +200,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			float distanceB = camera->eye.distance(Vector3f(b.model.m[12], b.model.m[13], b.model.m[14]));
 			return distanceA > distanceB; // Farther objects should be drawn first
 		});
-
+	
 	gbuffer_fbo.bind();
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -314,88 +316,92 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 		i++;
 	}
-	
-    if (multipass_on) {
-        
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL); 
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-        for (int i = 0; i < light_list.size(); i++) {
-            if (i == 0) {
-                if (opaqueness)
-                    glDisable(GL_BLEND);
-                else
-                    glEnable(GL_BLEND);
-            } else {
-                glEnable(GL_BLEND);
-            }
-			shader->setUniform("u_multipass", 1);
+	shader->setUniform("u_lab", lab);
+	if (lab == 1) {
+		if (multipass_on) {
 
-            // Set only the light at index 0, shader will use it
-            shader->setUniform("u_light_pos", light_pos[i]);
-            shader->setUniform("u_light_color", light_color[i]);
-            shader->setUniform("u_light_intensity", light_intensity[i]);
-            shader->setUniform("u_light_dir", light_dir[i]);
-            shader->setUniform("u_light_type", light_type[i]);
-            shader->setUniform("u_alpha_min", alpha_min);
-            shader->setUniform("u_alpha_max", alpha_max);
-            shader->setUniform("u_light_index", i);
-            shader->setUniform("u_light_count", 1); // just one light per pass
+			glEnable(GL_DEPTH_TEST);
+			glDepthFunc(GL_LEQUAL);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-            shader->setUniform("u_ambient_color", (i == 0) ? Scene::instance->ambient_light : vec3(0.f));
+			for (int i = 0; i < light_list.size(); i++) {
+				if (i == 0) {
+					if (opaqueness)
+						glDisable(GL_BLEND);
+					else
+						glEnable(GL_BLEND);
+				}
+				else {
+					glEnable(GL_BLEND);
+				}
+				shader->setUniform("u_multipass", 1);
 
-            // Upload matrices and other uniforms
-            shader->setUniform("u_model", model);
-            shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
-            shader->setUniform("u_camera_position", camera->eye);
-            float t = getTime();
-            shader->setUniform("u_time", t);
-            
-            if (render_wireframe)
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				// Set only the light at index 0, shader will use it
+				shader->setUniform("u_light_pos", light_pos[i]);
+				shader->setUniform("u_light_color", light_color[i]);
+				shader->setUniform("u_light_intensity", light_intensity[i]);
+				shader->setUniform("u_light_dir", light_dir[i]);
+				shader->setUniform("u_light_type", light_type[i]);
+				shader->setUniform("u_alpha_min", alpha_min);
+				shader->setUniform("u_alpha_max", alpha_max);
+				shader->setUniform("u_light_index", i);
+				shader->setUniform("u_light_count", 1); // just one light per pass
 
-            mesh->render(GL_TRIANGLES);
-        }
+				shader->setUniform("u_ambient_color", (i == 0) ? Scene::instance->ambient_light : vec3(0.f));
 
-        glDisable(GL_BLEND);
-        glDepthFunc(GL_LESS);
-    }
+				// Upload matrices and other uniforms
+				shader->setUniform("u_model", model);
+				shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+				shader->setUniform("u_camera_position", camera->eye);
+				float t = getTime();
+				shader->setUniform("u_time", t);
 
-	else { // Single pass
-		shader->setUniform("u_multipass", 0);
-		shader->setUniform3Array("u_light_pos", (float*)light_pos, fmin(light_list.size(), 10));
-		shader->setUniform3Array("u_light_color", (float*)light_color, fmin(light_list.size(), 10));
-		shader->setUniform1Array("u_light_intensity", (float*)light_intensity, fmin(light_list.size(), 10));
-		shader->setUniform3Array("u_light_dir", (float*)light_dir, fmin(light_list.size(), 10));
-		shader->setUniform1Array("u_light_type", light_type, fmin(light_list.size(), 10));
-		shader->setUniform1Array("u_light_shadow_index", light_shadow_map_index, fmin(light_list.size(), 10));
-		shader->setUniform("u_alpha_min", alpha_min);
-		shader->setUniform("u_alpha_max", alpha_max);
-				//shader->setUniform("u_shadow_bias", shadow_bias);
-		shader->setUniform("u_light_count", (int)fmin(light_list.size(), 10));
+				if (render_wireframe)
+					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-		shader->setUniform("u_ambient_color", Scene::instance->ambient_light);
+				mesh->render(GL_TRIANGLES);
+			}
 
-		//upload uniforms
-		shader->setUniform("u_model", model);
+			glDisable(GL_BLEND);
+			glDepthFunc(GL_LESS);
+		}
 
-		// Upload camera uniforms
-		shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
-		shader->setUniform("u_camera_position", camera->eye);
+		else { // Single pass
+			shader->setUniform("u_multipass", 0);
+			shader->setUniform3Array("u_light_pos", (float*)light_pos, fmin(light_list.size(), 10));
+			shader->setUniform3Array("u_light_color", (float*)light_color, fmin(light_list.size(), 10));
+			shader->setUniform1Array("u_light_intensity", (float*)light_intensity, fmin(light_list.size(), 10));
+			shader->setUniform3Array("u_light_dir", (float*)light_dir, fmin(light_list.size(), 10));
+			shader->setUniform1Array("u_light_type", light_type, fmin(light_list.size(), 10));
+			shader->setUniform1Array("u_light_shadow_index", light_shadow_map_index, fmin(light_list.size(), 10));
+			shader->setUniform("u_alpha_min", alpha_min);
+			shader->setUniform("u_alpha_max", alpha_max);
+			//shader->setUniform("u_shadow_bias", shadow_bias);
+			shader->setUniform("u_light_count", (int)fmin(light_list.size(), 10));
 
-		// Upload time, for cool shader effects
-		float t = getTime();
-		shader->setUniform("u_time", t);
+			shader->setUniform("u_ambient_color", Scene::instance->ambient_light);
 
-		// Render just the verticies as a wireframe
-		if (render_wireframe)
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			//upload uniforms
+			shader->setUniform("u_model", model);
 
-		//do the draw call that renders the mesh into the screen
-		mesh->render(GL_TRIANGLES);
+			// Upload camera uniforms
+			shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+			shader->setUniform("u_camera_position", camera->eye);
+
+			// Upload time, for cool shader effects
+			float t = getTime();
+			shader->setUniform("u_time", t);
+
+			// Render just the verticies as a wireframe
+			if (render_wireframe)
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+			//do the draw call that renders the mesh into the screen
+			mesh->render(GL_TRIANGLES);
+		}
 	}
-
+	
 	delete[] light_pos; // Free memory - no memory leaks
 	delete[] light_color; // Free memory - no memory leaks
 	delete[] light_intensity; // Free memory - no memory leaks
