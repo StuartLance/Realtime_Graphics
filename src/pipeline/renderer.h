@@ -3,6 +3,7 @@
 #include "prefab.h"
 
 #include "light.h"
+#include "../gfx/fbo.h"
 
 //forward declarations
 class Camera;

@@ -7,7 +7,7 @@
 #include "../gfx/shader.h"
 #include "../gfx/mesh.h"
 #include "../gfx/texture.h"
-#include "../gfx/fbo.h"
+
 #include "../pipeline/prefab.h"
 #include "../pipeline/material.h"
 #include "../pipeline/animation.h"
@@ -49,7 +49,19 @@ struct compareDrawCommands { // Functor for sorting opaque draw commands by dist
 };
 
 // GFX::FBO* shadow_map_fbo = nullptr; // FBO for shadow mapping
+void Renderer::initGBuffer() {
+	Vector2ui screen = CORE::getWindowSize();
 
+	// Create the GBuffer FBO
+
+	gbuffer_fbo.create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
+
+	gbuffer_fbo.bind();
+	//gbuffer_fbo.enableAllBuffers();
+	gbuffer_fbo.unbind();
+
+}
 
 
 //some globals
@@ -70,20 +82,8 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 	sphere.createSphere(1.0f);
 	sphere.uploadToVRAM();
-}
 
-void Renderer::initGBuffer() {
-	Vector2ui screen = CORE::getWindowSize();
-
-	// Create the GBuffer FBO
-
-	gbuffer_fbo.create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
-	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
-
-	gbuffer_fbo.bind();
-	//gbuffer_fbo.enableAllBuffers();
-	gbuffer_fbo.unbind();
-
+	initGBuffer();
 }
 
 void Renderer::setupScene()
@@ -168,7 +168,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	//set the clear color (the background color)
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
-
+	
+	gbuffer_fbo.bind();
 	// Clear the color and the depth buffer
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
@@ -201,20 +202,21 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			return distanceA > distanceB; // Farther objects should be drawn first
 		});
 	
-	gbuffer_fbo.bind();
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+	
+	
+	gbuffer_fbo.unbind();
 	// Render opaque objects first
 	for (const sDrawCommand& command : opaqueObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material, true);
 	}
 
-	gbuffer_fbo.unbind();
+	
 
 	// Render transparent objects after
 	for (const sDrawCommand& command : transparentObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material, false);
 	}
+	
 }
 
 
@@ -347,6 +349,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 				shader->setUniform("u_alpha_max", alpha_max);
 				shader->setUniform("u_light_index", i);
 				shader->setUniform("u_light_count", 1); // just one light per pass
+				shader->setUniform("u_alpha_cutoff", 0.1f);
 
 				shader->setUniform("u_ambient_color", (i == 0) ? Scene::instance->ambient_light : vec3(0.f));
 
@@ -377,8 +380,8 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 			shader->setUniform1Array("u_light_shadow_index", light_shadow_map_index, fmin(light_list.size(), 10));
 			shader->setUniform("u_alpha_min", alpha_min);
 			shader->setUniform("u_alpha_max", alpha_max);
-			//shader->setUniform("u_shadow_bias", shadow_bias);
 			shader->setUniform("u_light_count", (int)fmin(light_list.size(), 10));
+			shader->setUniform("u_alpha_cutoff", 0.1f);
 
 			shader->setUniform("u_ambient_color", Scene::instance->ambient_light);
 

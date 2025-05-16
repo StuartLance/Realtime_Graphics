@@ -68,26 +68,18 @@ void main()
 
 uniform vec4 u_color;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
+
+in vec3 v_normal;
+in vec3 v_world_position;
 
 void main()
 {
-    FragColor = u_color;
+    gbuffer_albedo = u_color;
+    vec3 N = normalize(v_normal);
+    gbuffer_normal_mat = vec4(N, 1.0);
 }
-
-\gbuffer_fill.fs
-
-#version 330 core
-
-void main(){
-
-
-
-    // This replaces the out vec4 FragColor:
-    layout(location = 0) out vec4 gbuffer_albedo;
-    layout(location = 1) out vec4 gbuffer_normal_mat;
-}
-
     
 
 
@@ -158,6 +150,11 @@ vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
     mat3 TBN = cotangentFrame(N, WP, uv);
     return normalize(TBN * normal_pixel);
 }
+
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
+
+uniform int u_lab;
 
 void single_multi()
 {
@@ -279,8 +276,6 @@ void single_multi()
 }
 
 
-layout(location = 0) out vec4 gbuffer_albedo;
-layout(location = 1) out vec4 gbuffer_normal_mat;
 
 void gBuffer()
 {
@@ -306,6 +301,7 @@ void main()
     switch(u_lab) {
         case 1:
             single_multi(); // Single and multi pass - No GBuffer
+            // gBuffer();
             break;
         case 2:
             gBuffer(); // GBuffer pass 
@@ -328,13 +324,12 @@ in vec3 v_world_position;
 
 uniform samplerCube u_texture;
 uniform vec3 u_camera_position;
-out vec4 FragColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
 
-void main()
-{
-    vec3 E = v_world_position - u_camera_position;
-    vec4 color = texture( u_texture, E );
-    FragColor = color;
+void main() {
+    gbuffer_albedo = vec4(0.0); // Black or transparent
+    gbuffer_normal_mat = vec4(0.0); // No surface normal
 }
 
 
@@ -352,8 +347,9 @@ uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 
-layout(location = 0) out vec4 FragColor;
-layout(location = 1) out vec4 NormalColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
+
 
 void main()
 {
@@ -366,8 +362,9 @@ void main()
 
     vec3 N = normalize(v_normal);
 
-    FragColor = color;
-    NormalColor = vec4(N,1.0);
+    gbuffer_albedo = color;
+    gbuffer_normal_mat = vec4(N, 1.0);
+
 }
 
 
