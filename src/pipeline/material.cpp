@@ -89,6 +89,24 @@ void Material::bind(GFX::Shader* shader) {
 		//	texture = normal_texture;
 		//	texture = occlusion_texture;
 		// ==========================
+        
+        // Albedo texture
+        GFX::Texture* albedo_tex = textures[SCN::eTextureChannel::ALBEDO].texture;
+        if (!albedo_tex)
+            albedo_tex = GFX::Texture::getWhiteTexture();
+        shader->setUniform("u_texture", albedo_tex, 0);
+
+        // Normal map texture
+        GFX::Texture* normal_tex = textures[SCN::eTextureChannel::NORMALMAP].texture;
+        if (!normal_tex)
+            normal_tex = GFX::Texture::getBlackTexture(); // assuming black is a default for normals
+        shader->setUniform("u_normal_texture", normal_tex, 1);
+
+        // Metallic-roughness-ao texture
+        GFX::Texture* mr_tex = textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
+        if (!mr_tex)
+            mr_tex = GFX::Texture::getBlackTexture(); // fallback
+        shader->setUniform("u_metallic_roughness_texture", mr_tex, 2);
 
 		// We always force a default albedo texture
 		if (texture == NULL)

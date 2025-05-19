@@ -29,22 +29,22 @@ out vec4 v_color;
 uniform float u_time;
 
 void main()
-{
-    //calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
-    v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
-    
-    //calcule the vertex in object space
-    v_position = a_vertex;
-    v_world_position = (u_model * vec4( v_position, 1.0) ).xyz;
-    
-    //store the color in the varying var to use it from the pixel shader
-    v_color = a_color;
+{	
+	//calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
+	v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
+	
+	//calcule the vertex in object space
+	v_position = a_vertex;
+	v_world_position = (u_model * vec4( v_position, 1.0) ).xyz;
+	
+	//store the color in the varying var to use it from the pixel shader
+	v_color = a_color;
 
-    //store the texture coordinates
-    v_uv = a_coord;
+	//store the texture coordinates
+	v_uv = a_coord;
 
-    //calcule the position of the vertex using the matrices
-    gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
+	//calcule the position of the vertex using the matrices
+	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
 }
 
 \quad.vs
@@ -56,9 +56,9 @@ in vec2 a_coord;
 out vec2 v_uv;
 
 void main()
-{
-    v_uv = a_coord;
-    gl_Position = vec4( a_vertex, 1.0 );
+{	
+	v_uv = a_coord;
+	gl_Position = vec4( a_vertex, 1.0 );
 }
 
 
@@ -68,19 +68,12 @@ void main()
 
 uniform vec4 u_color;
 
-layout(location = 0) out vec4 gbuffer_albedo;
-layout(location = 1) out vec4 gbuffer_normal_mat;
-
-in vec3 v_normal;
-in vec3 v_world_position;
+out vec4 FragColor;
 
 void main()
 {
-    gbuffer_albedo = u_color;
-    vec3 N = normalize(v_normal);
-    gbuffer_normal_mat = vec4(N, 1.0);
+	FragColor = u_color;
 }
-    
 
 
 \texture.fs
@@ -125,7 +118,12 @@ uniform float u_alpha_max;
 uniform float u_alpha_min;
 
 uniform sampler2D u_normal_map;
+uniform int u_lab;
 
+//Physically Based Renderer
+//uniform sampler2D u_texture; // ALBEDO
+uniform sampler2D u_normal_texture; // NORMALMAP
+uniform sampler2D u_metallic_roughness_texture; // R: AO, G: Roughness, B:Metalness
 
 mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
   // get edge vectors of the pixel triangle
@@ -150,11 +148,8 @@ vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
     mat3 TBN = cotangentFrame(N, WP, uv);
     return normalize(TBN * normal_pixel);
 }
-
 layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
-
-uniform int u_lab;
 
 void single_multi()
 {
@@ -173,9 +168,6 @@ void single_multi()
     texture_normal = (texture_normal * 2.0) - 1.0;
     vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
     N = normal;
-
-    gbuffer_normal_mat = vec4(N, 1.0); // Store normal in gbuffer
-    gbuffer_albedo = color; // Store albedo in gbuffer -- Maybe use final_color instead 
 
     vec3 total_diff = vec3(0.0);
     vec3 total_spec = vec3(0.0);
@@ -275,45 +267,126 @@ void single_multi()
     FragColor = vec4(final_color, color.a);
 }
 
-
+layout(location = 0) in vec2 a_position; // Quad vertex positions in NDC
 
 void gBuffer()
 {
     vec2 uv = v_uv;
-    vec4 color = u_color;
-    color *= texture(u_texture, v_uv);
+    vec4 color = u_color * texture(u_texture, uv);
 
     if (color.a < u_alpha_cutoff)
         discard;
 
-    // Tangent space normal mapping
+    // Normal mapping
     vec3 texture_normal = texture(u_normal_map, uv).xyz;
     texture_normal = (texture_normal * 2.0) - 1.0;
     vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
-    vec3 N = normal;
 
-    gbuffer_normal_mat = vec4(N, 1.0); // Store normal in gbuffer
-    gbuffer_albedo = color; // Store albedo in gbuffer -- Maybe use final_color instead 
+    // Store to G-buffer
+    gbuffer_albedo = color;              // Store base color (albedo)
+    gbuffer_normal_mat = vec4(normal, 1.0); // Store world-space normal
+}
+
+void physical() {
+    vec2 uv = v_uv;
+    vec4 tex_color = texture(u_texture, uv);
+    if (tex_color.a < u_alpha_cutoff)
+        discard;
+
+    vec3 albedo = tex_color.rgb * u_color.rgb;
+    float alpha = tex_color.a * u_color.a;
+
+    // Normal mapping
+    vec3 texture_normal = texture(u_normal_texture, uv).rgb;
+    texture_normal = normalize(texture_normal * 2.0 - 1.0);
+    vec3 N = perturbNormal(v_normal, v_world_position, uv, texture_normal);
+
+    vec3 V = normalize(u_camera_position - v_world_position); // View vector
+
+    // Load PBR properties
+    vec3 mr_data = texture(u_metallic_roughness_texture, uv).rgb;
+    float ao = mr_data.r;
+    float roughness = clamp(mr_data.g, 0.05, 1.0);
+    float metalness = mr_data.b;
+
+    vec3 F0 = mix(vec3(0.04), albedo, metalness);
+
+    vec3 Lo = vec3(0.0);
+
+    int start_i = 0;
+    int end_i = u_light_count;
+    if (u_multipass == 1) {
+        start_i = u_light_index;
+        end_i = u_light_index + 1;
+    }
+
+    for (int i = 0; i < u_light_count; ++i) {
+        if (i < start_i || i >= end_i)
+            continue;
+
+        vec3 L;
+        float attenuation = 1.0;
+        vec3 light_color = u_light_color[i] * u_light_intensity[i];
+
+        vec3 L_unnorm = u_light_pos[i] - v_world_position;
+        float d = length(L_unnorm);
+
+        if (u_light_type[i] == 1) {
+            L = normalize(L_unnorm);
+            d = max(d, 0.01);
+            attenuation = 1.0 / (d * d);
+        } else if (u_light_type[i] == 3) {
+            L = normalize(-u_light_dir[i]);
+            attenuation = 1.0;
+        } else if (u_light_type[i] == 2) {
+            vec3 D = normalize(u_light_dir[i]);
+            L = normalize(L_unnorm);
+            d = max(d, 0.01);
+            attenuation = 1.0 / (d * d);
+            float cos_theta = dot(L, D);
+            float cutoff_outer = cos(u_alpha_max);
+            float cutoff_inner = cos(u_alpha_min);
+            if (cos_theta < cutoff_outer) {
+                attenuation = 0.0;
+            } else {
+                float falloff = clamp((cos_theta - cutoff_outer) / (cutoff_inner - cutoff_outer), 0.0, 1.0);
+                attenuation *= falloff;
+            }
+        }
+
+        vec3 H = normalize(V + L);
+        float NdotL = max(dot(N, L), 0.0);
+        float NdotV = max(dot(N, V), 0.0);
+        float NdotH = max(dot(N, H), 0.0);
+        float HdotV = max(dot(H, V), 0.0);
+
+        // Cook-Torrance BRDF
+        float D = pow(roughness * roughness / (pow(NdotH, 2.0) * (roughness * roughness - 1.0) + 1.0), 2.0) / 3.14159;
+        float k = pow(roughness + 1.0, 2.0) / 8.0;
+        float G = NdotL / (NdotL * (1.0 - k) + k) * NdotV / (NdotV * (1.0 - k) + k);
+        vec3 F = F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
+
+        vec3 specular = D * G * F / max(4.0 * NdotL * NdotV, 0.001);
+        vec3 kS = F;
+        vec3 kD = vec3(1.0) - kS;
+        kD *= 1.0 - metalness;
+
+        vec3 radiance = light_color * attenuation;
+
+        vec3 contribution = (kD * albedo / 3.14159 + specular) * radiance * NdotL;
+        Lo += contribution;
+    }
+
+    vec3 ambient = u_ambient_color * albedo * ao;
+    vec3 final_color = ambient + Lo;
+    FragColor = vec4(final_color, alpha);
 }
 
 void main()
 {
-    switch(u_lab) {
-        case 1:
-            single_multi(); // Single and multi pass - No GBuffer
-            // gBuffer();
-            break;
-        case 2:
-            gBuffer(); // GBuffer pass 
-            break;
-        default:
-            single_multi();
-            break;
-    }
+    // physical();
+    gBuffer();
 }
-
-
-
 
 \skybox.fs
 
@@ -324,14 +397,14 @@ in vec3 v_world_position;
 
 uniform samplerCube u_texture;
 uniform vec3 u_camera_position;
-layout(location = 0) out vec4 gbuffer_albedo;
-layout(location = 1) out vec4 gbuffer_normal_mat;
+out vec4 FragColor;
 
-void main() {
-    gbuffer_albedo = vec4(0.0); // Black or transparent
-    gbuffer_normal_mat = vec4(0.0); // No surface normal
+void main()
+{
+    vec3 E = v_world_position - u_camera_position;
+    vec4 color = texture( u_texture, E );
+    FragColor = color;
 }
-
 
 \multi.fs
 
@@ -347,24 +420,22 @@ uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 
-layout(location = 0) out vec4 gbuffer_albedo;
-layout(location = 1) out vec4 gbuffer_normal_mat;
-
+layout(location = 0) out vec4 FragColor;
+layout(location = 1) out vec4 NormalColor;
 
 void main()
 {
-    vec2 uv = v_uv;
-    vec4 color = u_color;
-    color *= texture( u_texture, uv );
+	vec2 uv = v_uv;
+	vec4 color = u_color;
+	color *= texture( u_texture, uv );
 
-    if(color.a < u_alpha_cutoff)
-        discard;
+	if(color.a < u_alpha_cutoff)
+		discard;
 
-    vec3 N = normalize(v_normal);
+	vec3 N = normalize(v_normal);
 
-    gbuffer_albedo = color;
-    gbuffer_normal_mat = vec4(N, 1.0);
-
+	FragColor = color;
+	NormalColor = vec4(N,1.0);
 }
 
 
@@ -379,13 +450,13 @@ out vec4 FragColor;
 
 void main()
 {
-    float n = u_camera_nearfar.x;
-    float f = u_camera_nearfar.y;
-    float z = texture(u_texture,v_uv).x;
-    if( n == 0.0 && f == 1.0 )
-        FragColor = vec4(z);
-    else
-        FragColor = vec4( n * (z + 1.0) / (f + n - z * (f - n)) );
+	float n = u_camera_nearfar.x;
+	float f = u_camera_nearfar.y;
+	float z = texture(u_texture,v_uv).x;
+	if( n == 0.0 && f == 1.0 )
+		FragColor = vec4(z);
+	else
+		FragColor = vec4( n * (z + 1.0) / (f + n - z * (f - n)) );
 }
 
 
@@ -410,17 +481,17 @@ out vec3 v_normal;
 out vec2 v_uv;
 
 void main()
-{
-    //calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
-    v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
-    
-    //calcule the vertex in object space
-    v_position = a_vertex;
-    v_world_position = (u_model * vec4( a_vertex, 1.0) ).xyz;
-    
-    //store the texture coordinates
-    v_uv = a_coord;
+{	
+	//calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
+	v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
+	
+	//calcule the vertex in object space
+	v_position = a_vertex;
+	v_world_position = (u_model * vec4( a_vertex, 1.0) ).xyz;
+	
+	//store the texture coordinates
+	v_uv = a_coord;
 
-    //calcule the position of the vertex using the matrices
-    gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
+	//calcule the position of the vertex using the matrices
+	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
 }

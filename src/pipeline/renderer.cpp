@@ -74,7 +74,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 
-	lab = 1; // Change here or with action 
+	lab = 1; // Change here or with action
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -92,8 +92,6 @@ void Renderer::setupScene()
 		skybox_cubemap = GFX::Texture::Get(std::string(scene->base_folder + "/" + scene->skybox_filename).c_str());
 	else
 		skybox_cubemap = nullptr;
-	
-	// gbuffer_fbo.create(BaseApplication , )
 }
 
 void parseNodes(SCN::Node* node, Camera* cam) {
@@ -201,16 +199,16 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			float distanceB = camera->eye.distance(Vector3f(b.model.m[12], b.model.m[13], b.model.m[14]));
 			return distanceA > distanceB; // Farther objects should be drawn first
 		});
+
 	
-	
-	
-	gbuffer_fbo.unbind();
 	// Render opaque objects first
 	for (const sDrawCommand& command : opaqueObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material, true);
 	}
+	gbuffer_fbo.unbind();
 
-	
+	/*gbuffer_fbo.color_textures[0]->toViewport();
+	gbuffer_fbo.color_textures[1]->toViewport();*/
 
 	// Render transparent objects after
 	for (const sDrawCommand& command : transparentObjects) {
