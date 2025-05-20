@@ -80,8 +80,8 @@ void Renderer::initGBuffer() {
 	lighting_fbo->color_textures[0]->filename = "Lighting";
 	lighting_fbo->depth_texture->filename = "Depth_Lightning";
 
-	ssao_fbo = new GFX::FBO();
-	ssao_fbo->create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, false);
+	//ssao_fbo = new GFX::FBO();
+	//ssao_fbo->create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, false);
 
 
 	gbuffer_fbo->bind();
@@ -125,30 +125,30 @@ void Renderer::initGBuffer() {
 
 }
 
-std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi) {
-	std::vector<vec3> points;
-	points.resize(num);
-
-	for (int i = 0; i < num; i++) {
-		float u = random();
-		float v = random();
-
-		float theta = u * 2.0f * PI;
-		float phi = acos(2.0f * v - 1.0f);
-		float r = cbrt(random() * 0.9f + 0.1f) * radius;
-
-		vec3 p;
-		p.x = r * sin(phi) * cos(theta);
-		p.y = r * sin(phi) * sin(theta);
-		p.z = r * cos(phi);
-
-		if (hemi && p.z < 0.0f) p.z *= -1.0f;
-
-		points[i] = p;
-	}
-
-	return points;
-}
+//std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi) {
+//	std::vector<vec3> points;
+//	points.resize(num);
+//
+//	for (int i = 0; i < num; i++) {
+//		float u = random();
+//		float v = random();
+//
+//		float theta = u * 2.0f * PI;
+//		float phi = acos(2.0f * v - 1.0f);
+//		float r = cbrt(random() * 0.9f + 0.1f) * radius;
+//
+//		vec3 p;
+//		p.x = r * sin(phi) * cos(theta);
+//		p.y = r * sin(phi) * sin(theta);
+//		p.z = r * cos(phi);
+//
+//		if (hemi && p.z < 0.0f) p.z *= -1.0f;
+//
+//		points[i] = p;
+//	}
+//
+//	return points;
+//}
 
 
 //some globals
@@ -182,72 +182,72 @@ void Renderer::setupScene()
 	else
 		skybox_cubemap = nullptr;
 
-	if (!ssao_shader)
-		ssao_shader = GFX::Shader::Get("ssao");
+	//if (!ssao_shader)
+	//	ssao_shader = GFX::Shader::Get("ssao");
 
-	ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, true);
+	//ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, true);
 
-	if (!ssao_noise_texture)
-	{
-		int size = 4;
-		std::vector<float> noise_data(size * size * 3);
+	//if (!ssao_noise_texture)
+	//{
+	//	int size = 4;
+	//	std::vector<float> noise_data(size * size * 3);
 
-		for (int i = 0; i < size * size; ++i)
-		{
-			float angle = float(rand()) / RAND_MAX * 2.0f * PI;
-			noise_data[i * 3 + 0] = cos(angle);
-			noise_data[i * 3 + 1] = sin(angle);
-			noise_data[i * 3 + 2] = 0.0f; // z = 0
-		}
+	//	for (int i = 0; i < size * size; ++i)
+	//	{
+	//		float angle = float(rand()) / RAND_MAX * 2.0f * PI;
+	//		noise_data[i * 3 + 0] = cos(angle);
+	//		noise_data[i * 3 + 1] = sin(angle);
+	//		noise_data[i * 3 + 2] = 0.0f; // z = 0
+	//	}
 
-		ssao_noise_texture = new GFX::Texture();
-		ssao_noise_texture->create(size, size, GL_RGB, GL_FLOAT, &noise_data[0]);
+	//	ssao_noise_texture = new GFX::Texture();
+	//	ssao_noise_texture->create(size, size, GL_RGB, GL_FLOAT, &noise_data[0]);
 
-		ssao_noise_texture->bind();
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	}
+	//	ssao_noise_texture->bind();
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	//}
 
 }
 
-void Renderer::ssao(Camera* camera)
-{
-	if (!ssao_enabled || !ssao_shader) return;
-
-	ssao_fbo->bind();
-	glClearColor(1.0, 1.0, 1.0, 1.0);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	ssao_shader->enable();
-
-	ssao_shader->setUniform("u_res_inv", Vector2f(1.0f / ssao_fbo->width, 1.0f / ssao_fbo->height));
-	ssao_shader->setUniform("u_sample_count", ssao_samples);
-	ssao_shader->setUniform("u_sample_radius", ssao_radius);
-	ssao_shader->setUniform3Array("u_sample_pos", (float*)&ao_sample_points[0], ssao_samples);
-	ssao_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], 1);
-
-	ssao_shader->setTexture("u_noise_texture", ssao_noise_texture, 2); // slot 2
-	ssao_shader->setUniform("u_noise_scale", Vector2f(float(ssao_fbo->width) / 4.0f, float(ssao_fbo->height) / 4.0f));
-
-	// Bind depth texture
-	ssao_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, 0);
-
-	// Send projection and inverse
-	Matrix44 proj = camera->projection_matrix;
-	Matrix44 inv_proj = proj;
-	inv_proj.inverse();
-
-	ssao_shader->setUniform("u_p_mat", proj);
-	ssao_shader->setUniform("u_inv_p_mat", inv_proj);
-
-	// Draw quad
-	GFX::Mesh::getQuad()->render(GL_TRIANGLES);
-
-	ssao_shader->disable();
-	ssao_fbo->unbind();
-}
+//void Renderer::ssao(Camera* camera)
+//{
+//	if (!ssao_enabled || !ssao_shader) return;
+//
+//	ssao_fbo->bind();
+//	glClearColor(1.0, 1.0, 1.0, 1.0);
+//	glClear(GL_COLOR_BUFFER_BIT);
+//
+//	ssao_shader->enable();
+//
+//	ssao_shader->setUniform("u_res_inv", Vector2f(1.0f / ssao_fbo->width, 1.0f / ssao_fbo->height));
+//	ssao_shader->setUniform("u_sample_count", ssao_samples);
+//	ssao_shader->setUniform("u_sample_radius", ssao_radius);
+//	ssao_shader->setUniform3Array("u_sample_pos", (float*)&ao_sample_points[0], ssao_samples);
+//	ssao_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], 1);
+//
+//	ssao_shader->setTexture("u_noise_texture", ssao_noise_texture, 2); // slot 2
+//	ssao_shader->setUniform("u_noise_scale", Vector2f(float(ssao_fbo->width) / 4.0f, float(ssao_fbo->height) / 4.0f));
+//
+//	// Bind depth texture
+//	ssao_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, 0);
+//
+//	// Send projection and inverse
+//	Matrix44 proj = camera->projection_matrix;
+//	Matrix44 inv_proj = proj;
+//	inv_proj.inverse();
+//
+//	ssao_shader->setUniform("u_p_mat", proj);
+//	ssao_shader->setUniform("u_inv_p_mat", inv_proj);
+//
+//	// Draw quad
+//	GFX::Mesh::getQuad()->render(GL_TRIANGLES);
+//
+//	ssao_shader->disable();
+//	ssao_fbo->unbind();
+//}
 void parseNodes(SCN::Node* node, Camera* cam) {
 	if (!node) {
 		return;
@@ -410,9 +410,9 @@ void Renderer::renderDeferred()
 		i++;
 	}
 	
-	shader->setUniform("u_ssao_enabled", ssao_enabled);
+	/*shader->setUniform("u_ssao_enabled", ssao_enabled);
 	shader->setUniform("u_ssao_to_lighting", ssao_lighting);
-	shader->setTexture("u_ssao_texture", ssao_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_ssao_texture", ssao_fbo->color_textures[0], texture_slots++);*/
 	shader->setUniform("u_numShadows", (int)min(light_list.size(), 10));
 	shader->setUniform("u_light_count", (int)min(light_list.size(), 10));
 	shader->setUniform3Array("u_light_pos", (float*)light_pos, fmin(light_list.size(), 10));
@@ -550,9 +550,9 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// Render opaque objects first
 	GBuffer();
 
-	if (ssao_enabled) {
+	/*if (ssao_enabled) {
 		ssao(camera);
-	}
+	}*/
 
 
 	// Render opaque objects first

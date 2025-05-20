@@ -37,7 +37,7 @@ namespace SCN {
 
 		GFX::FBO* gbuffer_fbo;
 		GFX::FBO* lighting_fbo;
-		GFX::Texture* ssao_noise_texture = nullptr;
+		/*GFX::Texture* ssao_noise_texture = nullptr;
 		GFX::FBO* ssao_fbo;
 		GFX::Shader* ssao_shader = nullptr;
 		GFX::Texture* ssao_texture = nullptr;
@@ -46,7 +46,7 @@ namespace SCN {
 		bool ssao_enabled = false;
 		bool ssao_blur = false;
 		bool ssao_lighting = false;
-		std::vector<vec3> ao_sample_points;
+		std::vector<vec3> ao_sample_points;*/
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
