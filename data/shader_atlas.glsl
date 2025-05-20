@@ -4,6 +4,8 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
+gBuffer quad.vs deferred.fs
+singlepass_deferred quad.vs singlepass_deferred.fs
 
 \basic.vs
 
@@ -62,6 +64,273 @@ void main()
 }
 
 
+\singlepass_deferred.fs
+#version 410 core
+
+#define MAX_LIGHTS 10
+#define MAX_SHADOWS 4
+
+in vec2 uv;
+
+// G-Buffer textures
+uniform sampler2D u_gbuffer_color;
+uniform sampler2D u_gbuffer_normal;
+uniform sampler2D u_gbuffer_depth;
+
+uniform sampler2D u_ssao_texture;
+uniform bool u_ssao_to_lighting;
+uniform bool u_ssao_enabled;
+
+// Camera info
+uniform mat4 u_inverse_viewprojection;
+uniform vec3 u_camera_position;
+uniform vec2 u_camera_nearfar;
+
+// Lighting uniforms
+uniform vec3 u_ambient_light;
+uniform int u_light_count;
+uniform float u_bias;
+
+// Light arrays
+uniform vec3 u_light_pos[MAX_LIGHTS];
+uniform vec3 u_light_color[MAX_LIGHTS];
+uniform float u_light_intensity[MAX_LIGHTS];
+uniform int u_light_type[MAX_LIGHTS]; // 1=point, 2=spot, 3=directional
+uniform vec3 u_light_dir[MAX_LIGHTS];
+uniform vec2 u_light_cone[MAX_LIGHTS]; // x=inner angle, y=outer angle
+
+uniform vec2 u_res_inv;
+
+// Shadow maps
+uniform sampler2D u_shadow_map_0;
+uniform sampler2D u_shadow_map_3;
+uniform mat4 u_shadow_matrix_0;
+uniform mat4 u_shadow_matrix_3;
+
+out vec4 FragColor;
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+float DistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float num = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = 3.14159265 * denom * denom;
+
+    return num / denom;
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
+}
+
+vec3 cookTorranceBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float roughness, float metalness)
+{
+    vec3 H = normalize(V + L);
+
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+
+    vec3 F0 = mix(vec3(0.04), albedo, metalness);
+    vec3 F = fresnelSchlick(VdotH, F0);
+    float D = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
+
+    vec3 numerator = D * F * G;
+    float denominator = max(4.0 * NdotV * NdotL, 0.001);
+    vec3 specular = numerator / denominator;
+
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - metalness;
+
+    vec3 diffuse = albedo / 3.14159265;
+
+    return (kD * diffuse + specular) * NdotL;
+}
+
+vec3 reconstructPosition(vec2 uv, float depth) {
+    float z = depth * 2.0 - 1.0;
+    vec2 uv_clip = uv * 2.0 - 1.0;
+    vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, z, 1.0);
+    vec4 world_pos = u_inverse_viewprojection * clip_coords;
+    return world_pos.xyz / world_pos.w;
+}
+
+float computeShadow(sampler2D shadow_map, mat4 shadow_matrix, vec3 world_position) {
+    vec4 shadow_coord = shadow_matrix * vec4(world_position, 1.0);
+    shadow_coord.xyz /= shadow_coord.w;
+    vec2 shadow_uv = shadow_coord.xy * 0.5 + 0.5;
+
+    // If outside shadow map, return 1.0 (no shadow)
+    if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0)
+        return 1.0;
+
+    float closest_depth = texture(shadow_map, shadow_uv).r;
+    float current_depth = shadow_coord.z * 0.5 + 0.5;
+
+    return (current_depth - u_bias > closest_depth) ? 0.0 : 1.0;
+}
+
+void main()
+{
+    vec2 uv = gl_FragCoord.xy * u_res_inv;
+
+    // Read G-Buffer data
+    vec4 albedo_spec = texture(u_gbuffer_color, uv);
+    vec3 albedo = albedo_spec.rgb;
+    float roughness = albedo_spec.a;
+
+    vec4 normal_metal = texture(u_gbuffer_normal, uv);
+    vec3 N = normalize(normal_metal.rgb * 2.0 - 1.0);
+    float metalness = normal_metal.a;
+
+    float depth = texture(u_gbuffer_depth, uv).r;
+    if (depth >= 1.0)
+        discard;
+
+    vec3 world_position = reconstructPosition(uv, depth);
+    vec3 V = normalize(u_camera_position - world_position);
+
+    float ao = 1.0;
+    if (u_ssao_enabled && u_ssao_to_lighting)
+        ao = texture(u_ssao_texture, uv).r;
+
+    vec3 final_color = albedo * u_ambient_light * ao;
+
+    for(int i = 0; i < u_light_count && i < MAX_LIGHTS; i++) {
+        vec3 L;
+        float attenuation = 1.0;
+        float spotlight_factor = 1.0;
+        float shadow = 1.0;
+
+        if(u_light_type[i] == 1) { // Point light
+            vec3 light_vec = u_light_pos[i] - world_position;
+            float distance = length(light_vec);
+            L = normalize(light_vec);
+            attenuation = 1.0 / (distance * distance);
+            if(i == 0) shadow = computeShadow(u_shadow_map_0, u_shadow_matrix_0, world_position);
+        }
+        else if(u_light_type[i] == 2) { // Spot light
+            vec3 light_vec = u_light_pos[i] - world_position;
+            float distance = length(light_vec);
+            L = normalize(light_vec);
+            vec3 dir = normalize(u_light_dir[i]);
+            float theta = dot(L, dir);
+            float outer = cos(u_light_cone[i].y);
+            float inner = cos(u_light_cone[i].x);
+            float epsilon = inner - outer;
+            spotlight_factor = clamp((theta - outer) / epsilon, 0.0, 1.0);
+            attenuation = 1.0 / (distance * distance);
+            if(i == 0) shadow = computeShadow(u_shadow_map_0, u_shadow_matrix_0, world_position);
+        }
+        else if(u_light_type[i] == 3) { // Directional light
+            L = normalize(-u_light_dir[i]);
+            if(i == 3) shadow = computeShadow(u_shadow_map_3, u_shadow_matrix_3, world_position);
+        }
+        else {
+            continue;
+        }
+
+        vec3 light_intensity = u_light_color[i] * u_light_intensity[i] * attenuation * spotlight_factor * shadow;
+
+        vec3 brdf = cookTorranceBRDF(N, V, L, albedo, roughness, metalness);
+        final_color += brdf * light_intensity;
+    }
+
+    FragColor = vec4(final_color, 1.0);
+}
+
+
+
+
+
+
+
+\deferred.fs
+
+#version 410 core
+
+in vec2 v_uv; // UV coordinates from the vertex shader
+
+// G-buffer textures
+uniform sampler2D u_gbuffer_color;  // Albedo texture
+uniform sampler2D u_gbuffer_normal; // Normal texture
+uniform sampler2D u_gbuffer_depth;  // Depth texture
+
+// Light and camera uniforms
+uniform mat4 u_inv_projection;      // Inverse projection matrix
+uniform vec3 u_camera_position;     // Camera position
+uniform vec3 u_light_pos;           // Light position
+uniform vec3 u_light_color;         // Light color
+uniform float u_light_intensity;    // Light intensity
+
+out vec4 FragColor; // Final output color
+
+// Function to reconstruct world-space position from depth
+vec3 reconstructPosition(vec2 uv, float depth, mat4 invProjection) {
+    vec4 clipSpacePosition = vec4(uv * 2.0 - 1.0, depth, 1.0); // NDC
+    vec4 viewSpacePosition = invProjection * clipSpacePosition; // View space
+    viewSpacePosition /= viewSpacePosition.w; // Perspective divide
+    return viewSpacePosition.xyz; // World-space position
+}
+
+void main() {
+    // Sample G-buffer textures
+    vec4 albedo = texture(u_gbuffer_color, v_uv);  // Albedo (color)
+    vec4 normal_mat = texture(u_gbuffer_normal, v_uv); // Normal
+    float depth = texture(u_gbuffer_depth, v_uv).r; // Depth
+
+    // Reconstruct world-space position
+    vec3 position = reconstructPosition(v_uv, depth, u_inv_projection);
+
+    // Extract and normalize the normal
+    vec3 normal = normalize(normal_mat.xyz);
+
+    // Phong shading calculations
+    vec3 lightDir = normalize(u_light_pos - position); // Light direction
+    vec3 viewDir = normalize(u_camera_position - position); // View direction
+    vec3 reflectDir = reflect(-lightDir, normal); // Reflected light direction
+
+    // Ambient component
+    vec3 ambient = 0.1 * albedo.rgb;
+
+    // Diffuse component
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * u_light_color * u_light_intensity;
+
+    // Specular component
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0); // Shininess = 32
+    vec3 specular = spec * u_light_color * u_light_intensity;
+
+    // Combine all components
+    vec3 finalColor = ambient + diffuse + specular;
+
+    // Output the final color
+    FragColor = vec4(finalColor, albedo.a);
+}
+
+
 \flat.fs
 
 #version 330 core
@@ -78,7 +347,7 @@ void main()
 
 \texture.fs
 
-#version 330 core
+#version 410 core
 
 uniform float u_shininess;
 uniform float u_specular_strength;

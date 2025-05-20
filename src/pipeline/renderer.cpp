@@ -31,6 +31,9 @@ std::vector<sDrawCommand> opaqueObjects;
 std::vector<sDrawCommand> transparentObjects;
 std::vector<SCN::LightEntity*> light_list; // Contains all the lights in the scene
 
+std::vector<GFX::FBO*> shadow_fbos;
+
+
 
 
 using namespace SCN;
@@ -57,6 +60,14 @@ void Renderer::initGBuffer() {
 	gbuffer_fbo.create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
 	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
 
+	gbuffer_fbo.color_textures[0]->filename = "Albedo";
+	gbuffer_fbo.color_textures[1]->filename = "Normal";
+	gbuffer_fbo.depth_texture->filename = "Depth";
+
+	lighting_fbo.create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	lighting_fbo.color_textures[0]->filename = "Lighting";
+	lighting_fbo.depth_texture->filename = "Depth_Lightning";
+
 	gbuffer_fbo.bind();
 	//gbuffer_fbo.enableAllBuffers();
 	gbuffer_fbo.unbind();
@@ -74,7 +85,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 
-	lab = 1; // Change here or with action
+	lab = 2; // Change here or with action
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -205,8 +216,17 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	for (const sDrawCommand& command : opaqueObjects) {
 		renderMeshWithMaterial(command.model, command.mesh, command.material, true);
 	}
+
 	gbuffer_fbo.unbind();
 
+	// Lighting pass - Must be done after the gbuffer pass and unbind
+	gbuffer_fbo.depth_texture->copyTo(lighting_fbo.depth_texture);
+	lighting_fbo.bind();
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT);
+	lighting_fbo.unbind();
+
+	// Uncomment this if you want to see the gbuffer
 	/*gbuffer_fbo.color_textures[0]->toViewport();
 	gbuffer_fbo.color_textures[1]->toViewport();*/
 
@@ -268,12 +288,53 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	//define locals to simplify coding
 	GFX::Shader* shader = NULL;
+	GFX::Shader* light_pass_shader = NULL;
 	Camera* camera = Camera::current;
 
 	glEnable(GL_DEPTH_TEST);
 
 	//chose a shader
-	shader = GFX::Shader::Get("texture");
+	//shader = GFX::Shader::Get("texture"); // Change here to Gbuffer shader
+
+	if (lab == 2) {
+		shader = GFX::Shader::Get("singlepass_deferred");
+		//light_pass_shader = GFX::Shader::Get("light_pass");
+
+		gbuffer_fbo.unbind();
+		// A quad is usually a mesh of a plane,
+		// always aligned with you view
+		GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+		//no shader? then nothing to render
+		if (!shader)
+			return;
+		shader->enable();
+
+		// Send LIGHTS
+		vec3* light_pos = new vec3[light_list.size()]; // Dynamic array to store light positions
+		vec3* light_color = new vec3[light_list.size()]; // Dynamic array to store light colours
+		float* light_intensity = new float[light_list.size()]; // Dynamic array to store light intensities
+		vec3* light_dir = new vec3[light_list.size()]; // Dynamic array to store light directions
+		int* light_type = new int[light_list.size()];
+
+		int texture_slots = 0;
+
+
+
+		// Bind the GBuffers
+		shader->setTexture("u_gbuffer_color",
+			gbuffer_fbo.color_textures[0],
+			texture_slots++);
+		shader->setTexture("u_gbuffer_normal",
+			gbuffer_fbo.color_textures[1],
+			texture_slots++);
+		shader->setTexture("u_gbuffer_depth",
+			gbuffer_fbo.depth_texture,
+			texture_slots++);
+		quad->render(GL_TRIANGLES);
+
+		//light_pass_shader->disable();
+	}
 
     assert(glGetError() == GL_NO_ERROR);
 
@@ -291,6 +352,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	vec3* light_dir = new vec3[light_list.size()]; // Dynamic array to store light directions
 	int* light_type = new int[light_list.size()];
 
+	
 	// Analyse things ...
 	// Send lights to shader GPU
 	float alpha_max = 0.0f;
