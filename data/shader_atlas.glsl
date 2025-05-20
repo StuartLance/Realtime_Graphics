@@ -8,6 +8,7 @@ gBuffer quad.vs deferred.fs
 singlepass_deferred quad.vs singlepass_deferred.fs
 fill basic.vs fill.fs
 volume basic.vs volume.fs
+ssao basic.vs ssao.fs
 
 \basic.vs
 
@@ -18,7 +19,7 @@ in vec3 a_normal;
 in vec2 a_coord;
 in vec4 a_color;
 
-uniform vec3 u_camera_pos;
+uniform vec3 u_camera_position;
 
 uniform mat4 u_model;
 uniform mat4 u_viewprojection;
@@ -65,6 +66,81 @@ void main()
 	gl_Position = vec4( a_vertex, 1.0 );
 }
 
+\ssao.fs
+#version 330 core
+
+in vec2 v_uv;
+out vec4 FragColor;
+
+// G-Buffer
+uniform sampler2D u_gbuffer_depth;
+uniform sampler2D u_gbuffer_normal;
+
+// SSAO
+uniform vec3 u_sample_pos[64]; // Higher than 32
+uniform int u_sample_count;
+uniform float u_sample_radius;
+uniform sampler2D u_noise_texture;
+uniform vec2 u_noise_scale;
+
+// Matrices
+uniform mat4 u_p_mat;
+uniform mat4 u_inv_p_mat;
+
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    float z = depth * 2.0 - 1.0;
+    vec4 clip = vec4(uv * 2.0 - 1.0, z, 1.0);
+    vec4 view = u_inv_p_mat * clip;
+    return view.xyz / view.w;
+}
+
+void main()
+{
+    float center_depth = texture(u_gbuffer_depth, v_uv).r;
+    if (center_depth >= 1.0)
+        discard;
+
+    vec3 origin = reconstructViewPos(v_uv, center_depth);
+
+    // Reconstruct and normalize normal from G-Buffer
+    vec3 normal = texture(u_gbuffer_normal, v_uv).xyz * 2.0 - 1.0;
+    normal = normalize(normal);
+
+    // Sample random rotation vector
+    vec2 noise_uv = v_uv * u_noise_scale;
+    vec3 random_vec = texture(u_noise_texture, noise_uv).xyz;
+
+    vec3 tangent = normalize(random_vec - normal * dot(random_vec, normal));
+    vec3 bitangent = cross(normal, tangent);
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+    float occlusion = 0.0;
+
+    for (int i = 0; i < u_sample_count; ++i)
+    {
+        vec3 sample_vec = TBN * u_sample_pos[i];  // orientació SSAO+
+        vec3 sample_pos = origin + sample_vec * u_sample_radius;
+
+        vec4 proj = u_p_mat * vec4(sample_pos, 1.0);
+        proj.xyz /= proj.w;
+        vec2 sample_uv = proj.xy * 0.5 + 0.5;
+
+        if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0)
+            continue;
+
+        float sample_depth = texture(u_gbuffer_depth, sample_uv).r;
+        vec3 sample_view = reconstructViewPos(sample_uv, sample_depth);
+
+        // Si el punt mostrat està més a prop que la mostra → occlusion
+        if (sample_view.z < sample_pos.z - 0.01)
+            occlusion += 1.0;
+    }
+
+    occlusion = 1.0 - (occlusion / float(u_sample_count));
+    FragColor = vec4(vec3(occlusion), 1.0);
+}
+
+
 
 \singlepass_deferred.fs
 #version 410 core
@@ -79,7 +155,7 @@ uniform sampler2D u_gbuffer_color;
 uniform sampler2D u_gbuffer_normal;
 uniform sampler2D u_gbuffer_depth;
 
-uniform sampler2D u_ssao_texture;
+uniform sampler2D u_ssao_texture;    
 uniform bool u_ssao_to_lighting;
 uniform bool u_ssao_enabled;
 
@@ -91,7 +167,6 @@ uniform vec2 u_camera_nearfar;
 // Lighting uniforms
 uniform vec3 u_ambient_light;
 uniform int u_light_count;
-uniform float u_bias;
 
 // Light arrays
 uniform vec3 u_light_pos[MAX_LIGHTS];
@@ -103,11 +178,6 @@ uniform vec2 u_light_cone[MAX_LIGHTS]; // x=inner angle, y=outer angle
 
 uniform vec2 u_res_inv;
 
-// Shadow maps
-uniform sampler2D u_shadow_map_0;
-uniform sampler2D u_shadow_map_3;
-uniform mat4 u_shadow_matrix_0;
-uniform mat4 u_shadow_matrix_3;
 
 out vec4 FragColor;
 
@@ -236,15 +306,22 @@ void main()
         else if(u_light_type[i] == 2) { // Spot light
             vec3 light_vec = u_light_pos[i] - world_position;
             float distance = length(light_vec);
-            L = normalize(light_vec);
-            vec3 dir = normalize(u_light_dir[i]);
-            float theta = dot(L, dir);
-            float outer = cos(u_light_cone[i].y);
-            float inner = cos(u_light_cone[i].x);
-            float epsilon = inner - outer;
-            spotlight_factor = clamp((theta - outer) / epsilon, 0.0, 1.0);
-            attenuation = 1.0 / (distance * distance);
-            if(i == 0) shadow = computeShadow(u_shadow_map_0, u_shadow_matrix_0, world_position);
+            L = normalize(-light_vec); // Direction from fragment to light
+
+            vec3 dir = normalize(u_light_dir[i]); // Light direction
+
+            float theta = dot(-L, dir); // Angle between light direction and direction to fragment
+
+            float outer = cos(u_light_cone[i].y); // radians
+            float inner = cos(u_light_cone[i].x); // radians
+            float epsilon = max(inner - outer, 0.001); // avoid division by 0
+
+            float spotlight_factor = clamp((theta - outer) / epsilon, 0.0, 1.0);
+
+            float attenuation = spotlight_factor / (distance * distance); // ← combined
+
+            if(i == 0)
+                shadow = computeShadow(u_shadow_map_0, u_shadow_matrix_0, world_position);
         }
         else if(u_light_type[i] == 3) { // Directional light
             L = normalize(-u_light_dir[i]);
@@ -792,8 +869,11 @@ void main()
 
 
 \volume.fs
+#version 330 core
+
 // Fragment Shader
-varying vec3 v_world_position;
+in vec3 v_world_position;
+out vec4 FragColor;
 
 uniform sampler2D u_gbuffer_albedo;
 uniform sampler2D u_gbuffer_normals;
@@ -847,5 +927,5 @@ void main()
     float NdotL = max(0.0, dot(normal, L));
     vec3 diffuse = albedo * NdotL * att * u_light_color;
     
-    gl_FragColor = vec4(diffuse, 1.0);
+    FragColor = vec4(diffuse, 1.0);
 }
