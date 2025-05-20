@@ -56,21 +56,68 @@ void Renderer::initGBuffer() {
 	Vector2ui screen = CORE::getWindowSize();
 
 	// Create the GBuffer FBO
+	gbuffer_fbo = new GFX::FBO();
 
-	gbuffer_fbo.create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	if (!gbuffer_fbo->create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true))
+	{
+		std::cerr << "Error: Failed to create GBuffer FBO." << std::endl;
+		return;
+	}
+	
 	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
 
-	gbuffer_fbo.color_textures[0]->filename = "Albedo";
-	gbuffer_fbo.color_textures[1]->filename = "Normal";
-	gbuffer_fbo.depth_texture->filename = "Depth";
+	gbuffer_fbo->color_textures[0]->filename = "Albedo";
+	gbuffer_fbo->color_textures[1]->filename = "Normal";
+	gbuffer_fbo->depth_texture->filename = "Depth";
 
-	lighting_fbo.create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, true);
-	lighting_fbo.color_textures[0]->filename = "Lighting";
-	lighting_fbo.depth_texture->filename = "Depth_Lightning";
 
-	gbuffer_fbo.bind();
+	lighting_fbo = new GFX::FBO();
+
+
+
+
+	lighting_fbo->create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	lighting_fbo->color_textures[0]->filename = "Lighting";
+	lighting_fbo->depth_texture->filename = "Depth_Lightning";
+
+	gbuffer_fbo->bind();
+
+
+	// Check FBO completeness
+	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if (status != GL_FRAMEBUFFER_COMPLETE)
+	{
+		std::cerr << "Error: GBuffer FBO is incomplete. Status: " << status << std::endl;
+
+		switch (status)
+		{
+		case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT:
+			std::cerr << "Incomplete attachment." << std::endl;
+			break;
+		case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
+			std::cerr << "Missing attachment." << std::endl;
+			break;
+		case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
+			std::cerr << "Incomplete draw buffer." << std::endl;
+			break;
+		case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
+			std::cerr << "Incomplete read buffer." << std::endl;
+			break;
+		case GL_FRAMEBUFFER_UNSUPPORTED:
+			std::cerr << "Unsupported framebuffer format." << std::endl;
+			break;
+		default:
+			std::cerr << "Unknown error." << std::endl;
+			break;
+		}
+
+		gbuffer_fbo->unbind();
+		return;
+	}
+	
 	//gbuffer_fbo.enableAllBuffers();
-	gbuffer_fbo.unbind();
+	gbuffer_fbo->unbind();
+	std::cout << "GBuffer FBO successfully created and is complete." << std::endl;
 
 }
 
@@ -86,7 +133,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	skybox_cubemap = nullptr;
 
 	lab = 2; // Change here or with action
-
+    
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -165,6 +212,194 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	
 }
 
+void Renderer::renderVolumes(Camera* camera)
+{
+	GFX::Shader* light_volume_shader = GFX::Shader::Get("volume");
+	if (!light_volume_shader)
+		return;
+
+	light_volume_shader->enable();
+
+	// Bind GBuffer textures
+	light_volume_shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], 0);
+	light_volume_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], 1);
+	light_volume_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, 2);
+
+	// Camera and inverse matrices
+	light_volume_shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+	light_volume_shader->setUniform("u_camera_position", camera->eye);
+	Matrix44 inv_view_projection_matrix = camera->inverse_viewprojection_matrix;
+	light_volume_shader->setUniform("u_inv_viewprojection", inv_view_projection_matrix);
+	light_volume_shader->setUniform("u_res_inv", vec2(1.0f / gbuffer_fbo->width, 1.0f / gbuffer_fbo->height));
+
+	// Enable additive blending
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glDepthMask(GL_FALSE);
+
+	// Disable backface culling since we're inside the sphere
+	glDisable(GL_CULL_FACE);
+
+	// Render each light volume
+	for (LightEntity* light : light_list)
+	{
+		// Skip directional lights as they affect the whole scene
+		if (light->light_type == eLightType::DIRECTIONAL)
+			continue;
+
+		Matrix44 model;
+		Vector3f translation = light->root.getGlobalMatrix().getTranslation();
+		model.setTranslation(translation.x, translation.y, translation.z);
+		model.scale(light->max_distance, light->max_distance, light->max_distance);
+
+		light_volume_shader->setUniform("u_model", model);
+		light_volume_shader->setUniform("u_light_pos", model.getTranslation());
+		light_volume_shader->setUniform("u_light_color", light->color);
+		light_volume_shader->setUniform("u_light_intensity", light->intensity);
+		light_volume_shader->setUniform("u_light_type", (int)light->light_type);
+
+		if (light->light_type == eLightType::SPOT)
+		{
+			light_volume_shader->setUniform("u_light_dir", light->root.model.frontVector());
+			light_volume_shader->setUniform("u_light_cone", light->cone_info);
+		}
+
+		// Render the sphere
+		sphere.render(GL_TRIANGLES);
+	}
+
+	// Restore state
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_CULL_FACE);
+	light_volume_shader->disable();
+}
+
+
+// Deferred rendering
+void Renderer::renderDeferred()
+{
+	Camera* camera = Camera::current;
+	int texture_slots = 0;
+
+	// A quad is usually a mesh of a plane,
+	// always aligned with you view
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+	GFX::Shader* shader = NULL;
+	shader = GFX::Shader::Get("singlepass_deferred");
+
+	assert(glGetError() == GL_NO_ERROR);
+
+	//no shader? then nothing to render
+	if (!shader)
+		return;
+
+	shader->enable();
+
+	//send lights
+	vec3* light_pos = new vec3[light_list.size()];
+	vec3* light_color = new vec3[light_list.size()];
+	float* light_int = new float[light_list.size()];
+	vec3* light_dir = new vec3[light_list.size()];
+	int* light_type = new int[light_list.size()];
+	vec2* cone_info = new vec2[light_list.size()];
+
+	int i = 0;
+	for (LightEntity* light : light_list) {
+		light_pos[i] = light->root.getGlobalMatrix().getTranslation();
+		light_int[i] = light->intensity;
+		light_color[i] = light->color;
+		light_dir[i] = light->root.model.frontVector();
+		light_type[i] = light->light_type;
+		cone_info[i] = light->cone_info;
+		i++;
+	}
+
+	shader->setUniform("u_numShadows", (int)min(light_list.size(), 10));
+	shader->setUniform("u_light_count", (int)min(light_list.size(), 10));
+	shader->setUniform3Array("u_light_pos", (float*)light_pos, min(light_list.size(), 10));
+	shader->setUniform3Array("u_light_color", (float*)light_color, min(light_list.size(), 10));
+	shader->setUniform1Array("u_light_intensity", light_int, min(light_list.size(), 10));
+	shader->setUniform1Array("u_light_type", (int*)light_type, min(light_list.size(), 10));
+	shader->setUniform3Array("u_light_dir", (float*)light_dir, min(light_list.size(), 10));
+	shader->setUniform2Array("u_light_cone", (float*)cone_info, min(light_list.size(), 10));
+	shader->setUniform("u_ambient_light", scene->ambient_light);
+	/*shader->setUniform("u_ssao_enabled", ssao_compute_enabled);
+	shader->setUniform("u_ssao_to_lighting", ssao_apply_to_lighting);
+	shader->setTexture("u_ssao_texture", ssao_fbo->color_textures[0], texture_slots++);*/
+
+
+	delete[] light_pos;
+	delete[] light_color;
+	delete[] light_int;
+	delete[] light_dir;
+	delete[] cone_info;
+	delete[] light_type;
+
+
+	//upload uniforms
+	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+	shader->setUniform("u_camera_position", camera->eye);
+
+
+
+	// Upload time, for cool shader effects
+	float t = getTime();
+	shader->setUniform("u_time", t);
+
+	// Bind the GBuffers
+	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
+	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
+
+	Matrix44 inv_vp = Camera::current->viewprojection_matrix;
+	inv_vp.inverse();
+	shader->setUniform("u_inv_viewprojection", inv_vp);
+	shader->setUniform("u_res_inv", Vector2f(1.0f / gbuffer_fbo->width, 1.0f / gbuffer_fbo->height));
+
+	if (render_wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+	quad->render(GL_TRIANGLES);
+
+	shader->disable();
+}
+
+void Renderer::GBuffer()
+{
+	// Bind G-Buffer FBO
+
+	gbuffer_fbo->bind();
+
+	// Clear all buffers
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// Get GBuffer fill shader
+	GFX::Shader* shader = GFX::Shader::Get("fill");
+
+	shader->enable();
+
+	// Render all opaque objects
+	for (const sDrawCommand& command : opaqueObjects)
+	{
+
+		// Set model matrix
+		shader->setUniform("u_model", command.model);
+		shader->setUniform("u_viewprojection", Camera::current->viewprojection_matrix);
+
+		// Bind material properties
+		command.material->bind(shader);
+
+		// Render mesh
+		command.mesh->render(GL_TRIANGLES);
+	}
+
+	shader->disable();
+	gbuffer_fbo->unbind();
+}
+
+
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 {
 	opaqueObjects.clear();
@@ -173,15 +408,23 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	this->scene = scene;
 	setupScene();
 
+	// Clear previous frame data
+	draw_command_list.clear();
+	light_list.clear();
+
 	parseSceneEntities(scene, camera);
 
 	//set the clear color (the background color)
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
 	
-	gbuffer_fbo.bind();
+	gbuffer_fbo->bind();
 	// Clear the color and the depth buffer
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
+
+	// Render to gBuffer
+	GBuffer();
+
 
 	//render skybox
 	if(skybox_cubemap)
@@ -217,24 +460,30 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		renderMeshWithMaterial(command.model, command.mesh, command.material, true);
 	}
 
-	gbuffer_fbo.unbind();
+	gbuffer_fbo->unbind();
 
 	// Lighting pass - Must be done after the gbuffer pass and unbind
-	gbuffer_fbo.depth_texture->copyTo(lighting_fbo.depth_texture);
-	lighting_fbo.bind();
+	gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
+	lighting_fbo->bind();
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
-	lighting_fbo.unbind();
+	lighting_fbo->unbind();
 
-	// Uncomment this if you want to see the gbuffer
-	/*gbuffer_fbo.color_textures[0]->toViewport();
-	gbuffer_fbo.color_textures[1]->toViewport();*/
-
-	// Render transparent objects after
-	for (const sDrawCommand& command : transparentObjects) {
-		renderMeshWithMaterial(command.model, command.mesh, command.material, false);
+	if (lab == 2) {
+		renderVolumes(camera);
+		renderDeferred();
 	}
-	
+	else {
+
+		// Uncomment this if you want to see the gbuffer
+		/*gbuffer_fbo.color_textures[0]->toViewport();
+		gbuffer_fbo.color_textures[1]->toViewport();*/
+
+		// Render transparent objects after
+		for (const sDrawCommand& command : transparentObjects) {
+			renderMeshWithMaterial(command.model, command.mesh, command.material, false);
+		}
+	}
 }
 
 
@@ -263,6 +512,8 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	m.scale(10, 10, 10);
 	shader->setUniform("u_model", m);
 
+
+	
 	// Upload camera uniforms
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
 	shader->setUniform("u_camera_position", camera->eye);
@@ -300,7 +551,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		shader = GFX::Shader::Get("singlepass_deferred");
 		//light_pass_shader = GFX::Shader::Get("light_pass");
 
-		gbuffer_fbo.unbind();
+		
 		// A quad is usually a mesh of a plane,
 		// always aligned with you view
 		GFX::Mesh* quad = GFX::Mesh::getQuad();
@@ -323,13 +574,13 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 		// Bind the GBuffers
 		shader->setTexture("u_gbuffer_color",
-			gbuffer_fbo.color_textures[0],
+			gbuffer_fbo->color_textures[0],
 			texture_slots++);
 		shader->setTexture("u_gbuffer_normal",
-			gbuffer_fbo.color_textures[1],
+			gbuffer_fbo->color_textures[1],
 			texture_slots++);
 		shader->setTexture("u_gbuffer_depth",
-			gbuffer_fbo.depth_texture,
+			gbuffer_fbo->depth_texture,
 			texture_slots++);
 		quad->render(GL_TRIANGLES);
 

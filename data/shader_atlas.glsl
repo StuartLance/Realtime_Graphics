@@ -6,6 +6,8 @@ depth quad.vs depth.fs
 multi basic.vs multi.fs
 gBuffer quad.vs deferred.fs
 singlepass_deferred quad.vs singlepass_deferred.fs
+fill basic.vs fill.fs
+volume basic.vs volume.fs
 
 \basic.vs
 
@@ -344,6 +346,29 @@ void main()
 	FragColor = u_color;
 }
 
+\fill.fs
+#version 330 core
+// Uniforms
+uniform sampler2D u_texture; // Albedo
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_metallic_roughness;
+
+in vec2 v_uv;
+
+layout(location = 0) out vec4 gbuffer1;
+layout(location = 1) out vec4 gbuffer2;
+
+void main() {
+    vec3 albedo = texture(u_texture, v_uv).rgb;
+    vec3 normal = texture(u_normal_texture, v_uv).rgb;
+    vec3 mer = texture(u_metallic_roughness, v_uv).rgb;
+
+    float roughness = mer.g;
+    float metalness = mer.b;
+
+    gbuffer1 = vec4(albedo, roughness);
+    gbuffer2 = vec4(normal, metalness);
+}
 
 \texture.fs
 
@@ -763,4 +788,64 @@ void main()
 
 	//calcule the position of the vertex using the matrices
 	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
+}
+
+
+\volume.fs
+// Fragment Shader
+varying vec3 v_world_position;
+
+uniform sampler2D u_gbuffer_albedo;
+uniform sampler2D u_gbuffer_normals;
+uniform sampler2D u_gbuffer_depth;
+
+uniform mat4 u_inverse_viewprojection;
+uniform vec2 u_iResolution;
+uniform vec3 u_camera_position;
+
+uniform vec3 u_light_pos;
+uniform vec3 u_light_color;
+uniform int u_light_type;
+uniform vec3 u_light_dir;
+uniform vec2 u_light_cone;
+
+vec3 getWorldPosition(vec2 uv, float depth)
+{
+    vec4 pos = u_inverse_viewprojection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    return pos.xyz / pos.w;
+}
+
+void main()
+{
+    vec2 uv = gl_FragCoord.xy * u_iResolution;
+    float depth = texture2D(u_gbuffer_depth, uv).x;
+    
+    // Early exit if no geometry
+    if (depth == 1.0) discard;
+    
+    vec3 world_pos = getWorldPosition(uv, depth);
+    vec3 albedo = texture2D(u_gbuffer_albedo, uv).rgb;
+    vec3 normal = texture2D(u_gbuffer_normals, uv).xyz * 2.0 - 1.0;
+    
+    // Vector luz -> superficie
+    vec3 L = u_light_pos - world_pos;
+    float dist = length(L);
+    L = normalize(L);
+    
+    // Atenuación
+    float att = 1.0 / (1.0 + dist * dist);
+    
+    // Spot light factor
+    if (u_light_type == 2) // SPOT
+    {
+        float cos_angle = dot(-L, u_light_dir);
+        float spot = smoothstep(u_light_cone.y, u_light_cone.x, cos_angle);
+        att *= spot;
+    }
+    
+    // Diffuse
+    float NdotL = max(0.0, dot(normal, L));
+    vec3 diffuse = albedo * NdotL * att * u_light_color;
+    
+    gl_FragColor = vec4(diffuse, 1.0);
 }

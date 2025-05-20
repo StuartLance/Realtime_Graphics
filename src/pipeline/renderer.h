@@ -35,8 +35,8 @@ namespace SCN {
 		Vector2ui screen;
 		SCN::Scene* scene;
 
-		GFX::FBO gbuffer_fbo;
-		GFX::FBO lighting_fbo;
+		GFX::FBO* gbuffer_fbo;
+		GFX::FBO* lighting_fbo;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -50,6 +50,12 @@ namespace SCN {
 		//...
 		void parseSceneEntities(SCN::Scene* scene, Camera* camera);
 
+		void renderVolumes(Camera* camera);
+		void renderDeferred();
+		void GBuffer();
+		
+		
+		
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
 
