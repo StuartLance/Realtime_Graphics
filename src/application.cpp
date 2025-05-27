@@ -218,6 +218,12 @@ void Application::onResize(int width, int height)
 	camera->aspect =  width / (float)height;
 	window_width = width;
 	window_height = height;
+
+	if (renderer)
+	{
+		renderer->screen = Vector2ui(width, height);
+		renderer->initGBuffer();
+	}
 }
 
 void Application::onFileDrop(std::string filename, std::string relative, SDL_Event event)

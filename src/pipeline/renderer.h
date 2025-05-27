@@ -13,14 +13,12 @@
 #include "../gfx/mesh.h"
 #include "../gfx/texture.h"
 
-// #include "../pipeline/deferred.h"
 #include "../pipeline/prefab.h"
 #include "../pipeline/material.h"
 #include "../pipeline/animation.h"
 #include "../utils/utils.h"
 #include "../extra/hdre.h"
 #include "../core/ui.h"
-
 
 //forward declarations
 class Camera;
@@ -34,7 +32,12 @@ namespace GFX {
 
 
 namespace SCN {
+    struct sDrawCommand {
+        GFX::Mesh* mesh; // Contains the geometry of the entity
+        SCN::Material* material; // Material in scene not GFX. Is the recipe for putting together the surafce
+        Matrix44 model; // Contains location of entity
 
+    };
 	class Prefab;
 	class Material;
 
@@ -45,7 +48,12 @@ namespace SCN {
 	public:
 		bool render_wireframe;
 		bool render_boundaries;
-
+ 
+        std::vector<sDrawCommand> draw_command_list; // Contains all the entities to be drawn
+        std::vector<sDrawCommand> opaqueObjects;
+        std::vector<sDrawCommand> transparentObjects;
+        std::vector<SCN::LightEntity*> light_list; // Contains all the lights in the scene
+        GFX::Mesh sphere;
 		int lab;
 
 		GFX::Texture* skybox_cubemap;
@@ -81,8 +89,9 @@ namespace SCN {
 		void renderVolumes(Camera* camera);
 		void renderDeferred();
 		void GBuffer();
-		
-		
+        void renderFire(const Vector3f& position, float scale);
+        void parseNodes(SCN::Node* node, Camera* cam);
+
 		
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
@@ -97,5 +106,7 @@ namespace SCN {
 
 		void showUI();
 	};
+
+
 
 };

@@ -1146,14 +1146,14 @@ vec3 getWorldPosition(vec2 uv, float depth)
 void main()
 {
     vec2 uv = gl_FragCoord.xy * u_iResolution;
-    float depth = texture2D(u_gbuffer_depth, uv).x;
+    float depth = texture(u_gbuffer_depth, uv).x;
     
     // Early exit if no geometry
     if (depth == 1.0) discard;
     
     vec3 world_pos = getWorldPosition(uv, depth);
-    vec3 albedo = texture2D(u_gbuffer_albedo, uv).rgb;
-    vec3 normal = texture2D(u_gbuffer_normals, uv).xyz * 2.0 - 1.0;
+    vec3 albedo = texture(u_gbuffer_albedo, uv).rgb;
+    vec3 normal = texture(u_gbuffer_normals, uv).xyz * 2.0 - 1.0;
     
     // Vector luz -> superficie
     vec3 L = u_light_pos - world_pos;
@@ -1182,63 +1182,116 @@ void main()
 \fire.vs
 #version 330 core
 
-in vec3 a_vertex;
-in vec3 a_normal;
-in vec2 a_coord;
+layout (location = 0) in vec3 a_vertex;
+layout (location = 1) in vec2 a_uv;
+
+out vec2 v_uv;
 
 uniform mat4 u_model;
 uniform mat4 u_viewprojection;
-uniform float u_time;
 
-out vec2 v_uv;
-out float v_distort;
-
-void main()
-{
-    // Pass UVs to fragment shader
-    v_uv = a_coord;
-
-    // Animate the vertex position for fire effect (simple vertical distortion)
-    float distortion = sin(a_vertex.x * 10.0 + u_time * 2.0) * 0.05;
-    v_distort = distortion;
-
-    vec3 pos = a_vertex;
-    pos.y += distortion;
-
-    // Transform to world and clip space
-    vec4 world_pos = u_model * vec4(pos, 1.0);
-    gl_Position = u_viewprojection * world_pos;
+void main() {
+    gl_Position = u_viewprojection * u_model * vec4(a_vertex, 1.0);
+    v_uv = a_uv;
 }
+
 
 \fire.fs
 #version 330 core
 
-in vec2 v_uv;
-in float v_distort;
+in vec2 v_uv;         // received from vertex shader
+out vec4 FragColor;   // final output color
 
-out vec4 FragColor;
+// fire uniforms
+uniform float detail_strength = 3.0;
+uniform float scroll_speed = 1.2;
+uniform float fire_height = 1.0;
+uniform float fire_shape = 1.5;
+uniform float fire_thickness = 0.55;
+uniform float fire_sharpness = 1.0;
+uniform float intensity = 1.0;
 
-uniform sampler2D u_fire_texture;
+// noise uniforms
+uniform int noise_octaves = 6;
+uniform float noise_lacunarity = 3.0;
+uniform float noise_gain = 0.5;
+uniform float noise_amplitude = 1.0;
+uniform float noise_frequency = 1.5;
+
+// time
 uniform float u_time;
-uniform float u_intensity;
 
-void main()
-{
-    // Animate UVs for a moving fire effect
+// 2D hash function
+float hash(vec2 p) {
+    p = fract(p * 0.3183099 + vec2(0.1, 0.1));
+    p *= 17.0;
+    return fract(p.x * p.y * (p.x + p.y));
+}
+
+// 2D value noise (smooth)
+float noise(vec2 x) {
+    vec2 p = floor(x);
+    vec2 f = fract(x);
+
+    float n =
+        hash(p) * (1.0 - f.x) * (1.0 - f.y) +
+        hash(p + vec2(1.0, 0.0)) * f.x * (1.0 - f.y) +
+        hash(p + vec2(0.0, 1.0)) * (1.0 - f.x) * f.y +
+        hash(p + vec2(1.0, 1.0)) * f.x * f.y;
+
+    return n;
+}
+
+// Fractional Brownian Motion (fbm)
+float fbm(vec2 p) {
+    float total = 0.0;
+    float amplitude = noise_amplitude;
+    float frequency = noise_frequency;
+
+    for (int i = 0; i < noise_octaves; ++i) {
+        total += noise(p * frequency) * amplitude;
+        frequency *= noise_lacunarity;
+        amplitude *= noise_gain;
+    }
+
+    return total * 0.5;
+}
+
+void main() {
     vec2 uv = v_uv;
-    uv.y += u_time * 0.5;
-    uv.x += sin(u_time + v_uv.y * 5.0) * 0.02;
 
-    // Add distortion from vertex shader
-    uv.y += v_distort * 2.0;
+    // Modify UV for animation and centering
+    vec2 modified_uv = -uv;
+    modified_uv.x = mod(modified_uv.x, 1.0) - 0.5;
+    modified_uv.y += 0.84;
 
-    // Sample the fire texture
-    vec4 fireColor = texture(u_fire_texture, uv);
+    // Scroll noise over time
+    float scroll = scroll_speed * detail_strength * u_time;
 
-    // Optional: boost intensity and fade out low alpha
-    fireColor.rgb *= u_intensity;
-    if (fireColor.a < 0.05)
-        discard;
+    // Sample noise
+    float n = fbm(detail_strength * modified_uv - vec2(0.0, scroll));
 
-    FragColor = fireColor;
+    // Fire shape and masking
+    float fire_intensity = intensity - 16.0 * fire_sharpness * pow(
+        max(0.0,
+            length(
+                modified_uv * vec2((1.0 / fire_thickness) + modified_uv.y * fire_shape, 1.0 / fire_height)
+            ) - n * max(0.0, modified_uv.y + 0.25)
+        ), 1.2);
+
+    float fire_i = n * fire_intensity * (1.5 - pow(uv.y, 14.0));
+    fire_i = clamp(fire_i, 0.0, 1.0);
+
+    // Fire gradient color
+    vec3 fire_color = vec3(
+        1.5 * fire_i,
+        1.5 * pow(fire_i, 3.0),
+        pow(fire_i, 6.0)
+    );
+
+    // Alpha based on intensity and vertical fade
+    float alpha = fire_intensity * (1.0 - pow(uv.y, 3.0));
+    vec4 final_color = vec4(mix(vec3(0.0), fire_color, alpha), alpha);
+
+    FragColor = final_color;
 }
