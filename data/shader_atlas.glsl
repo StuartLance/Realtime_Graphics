@@ -10,6 +10,8 @@ fill basic.vs fill.fs
 volume basic.vs volume.fs
 ssao basic.vs ssao.fs
 
+fire fire.vs fire.fs
+
 \basic.vs
 
 #version 330 core
@@ -469,7 +471,7 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
 }
 
 vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
-    normal_pixel = normal_pixel * 255./127. -128./127.;
+    normal_pixel = normal_pixel;
     mat3 TBN = cotangentFrame(N, WP, uv);
     return normalize(TBN * normal_pixel);
 }
@@ -589,7 +591,7 @@ void single_multi()
     }
 
     vec3 final_color = ambient + total_diff * color.rgb + total_spec;
-    FragColor = vec4(final_color, color.a);
+    FragColor = vec4(N, color.a);
 }
 
 layout(location = 0) in vec2 a_position; // Quad vertex positions in NDC
@@ -624,7 +626,7 @@ void physical() {
     // Normal mapping
     vec3 texture_normal = texture(u_normal_texture, uv).rgb;
     texture_normal = normalize(texture_normal * 2.0 - 1.0);
-    vec3 N = perturbNormal(v_normal, v_world_position, uv, texture_normal);
+    vec3 N = perturbNormal(normalize(v_normal), v_world_position, uv, texture_normal);
 
     vec3 V = normalize(u_camera_position - v_world_position); // View vector
 
@@ -685,10 +687,16 @@ void physical() {
         float NdotH = max(dot(N, H), 0.0);
         float HdotV = max(dot(H, V), 0.0);
 
+        float rSqu = roughness*roughness;
+        float denom_step = NdotH * NdotH * (rSqu * rSqu -1.0 ) + 1.0;
+        float denom = 3.1415926 * pow(denom_step, 2);
+
+
+
         // Cook-Torrance BRDF
-        float D = pow(roughness * roughness / (pow(NdotH, 2.0) * (roughness * roughness - 1.0) + 1.0), 2.0) / 3.14159;
-        float k = pow(roughness + 1.0, 2.0) / 8.0;
-        float G = NdotL / (NdotL * (1.0 - k) + k) * NdotV / (NdotV * (1.0 - k) + k);
+        float D = pow(rSqu, 2) / denom;
+        float k = rSqu / 2.0;
+        float G = (NdotL / (NdotL * (1.0 - k) + k)) * (NdotV / (NdotV * (1.0 - k) + k));
         vec3 F = F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
 
         vec3 specular = D * G * F / max(4.0 * NdotL * NdotV, 0.001);
@@ -698,7 +706,7 @@ void physical() {
 
         vec3 radiance = light_color * attenuation;
 
-        vec3 contribution = (kD * albedo / 3.14159 + specular) * radiance * NdotL;
+        vec3 contribution = ((albedo / 3.14159) + specular) * radiance * NdotL;
         Lo += contribution;
     }
 
@@ -709,9 +717,295 @@ void physical() {
 
 void main()
 {
-    // physical();
-    gBuffer();
+    physical();
+    //gBuffer();
 }
+
+
+\physical.fs
+
+
+\singlepass.fs
+#version 410 core
+
+uniform float u_shininess;
+uniform float u_specular_strength;
+uniform vec3 u_ambient_color;
+uniform vec3 u_camera_position;
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+uniform vec4 u_color;
+uniform sampler2D u_texture;
+uniform float u_time;
+uniform float u_alpha_cutoff;
+
+uniform vec3 u_light_pos[10];
+uniform vec3 u_light_color[10];
+uniform float u_light_intensity[10];
+uniform int u_light_count; // Put where the 4 is
+uniform int u_light_type[10]; // 0 = point, 1 = directional
+
+uniform vec3 u_multi_light_pos;
+uniform vec3 u_multi_light_color;
+uniform vec3 u_multi_light_dir;
+uniform float u_multi_light_intensity;
+uniform int u_multi_type;
+
+uniform vec3 u_light_dir[10]; // direction for directional lights
+uniform int u_multipass;     // 0 = single pass, 1 = multipass
+uniform int u_light_index;   // Only used if u_multipass == 1
+
+out vec4 FragColor;
+
+uniform float u_alpha_max;
+uniform float u_alpha_min;
+
+uniform sampler2D u_normal_map;
+
+mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
+  // get edge vectors of the pixel triangle
+  vec3 dp1 = dFdx(p);
+  vec3 dp2 = dFdy(p);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+
+  // solve the linear system
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  // construct a scale-invariant frame
+  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
+  return mat3(normalize(T * invmax), normalize(B * invmax), N);
+}
+
+vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
+    normal_pixel = normal_pixel;
+    mat3 TBN = cotangentFrame(N, WP, uv);
+    return normalize(TBN * normal_pixel);
+}
+
+void main()
+{
+    vec2 uv = v_uv;
+    vec4 color = u_color;
+    color *= texture(u_texture, v_uv);
+
+    if (color.a < u_alpha_cutoff)
+        discard;
+
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(u_camera_position - v_world_position);
+
+    // Tangent space normal mapping
+    vec3 texture_normal = texture(u_normal_map, uv).xyz;
+    texture_normal = (texture_normal * 2.0) - 1.0;
+    vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
+    N = normal;
+
+    vec3 total_diff = vec3(0.0);
+    vec3 total_spec = vec3(0.0);
+    vec3 ambient = vec3(0.0);
+
+
+    // Single-pass: loop through all lights
+    ambient = u_ambient_color * color.rgb;
+
+    for (int i = 0; i < u_light_count; ++i) {
+        vec3 L_unnorm = u_light_pos[i] - v_world_position;
+        vec3 L;
+        float attenuation = 1.0;
+        float d = length(L_unnorm);
+
+        if (u_light_type[i] == 1) {
+            L = normalize(L_unnorm);
+            d = max(d, 0.01);
+            attenuation = 1.0 / (d * d);
+        } else if (u_light_type[i] == 3) {
+            L = normalize(-normalize(u_light_dir[i]));
+            attenuation = 1.0;
+        } else if (u_light_type[i] == 2) {
+            vec3 D = normalize(u_light_dir[i]);
+            L = normalize(L_unnorm);
+            d = max(d, 0.01);
+            attenuation = 1.0 / (d * d);
+            float cos_theta = dot(L, D);
+            float cutoff_outer = cos(u_alpha_max);
+            float cutoff_inner = cos(u_alpha_min);
+            if (cos_theta < cutoff_outer) {
+                attenuation = 0.0;
+            } else {
+                float falloff = clamp((cos_theta - cutoff_outer) / (cutoff_inner - cutoff_outer), 0.0, 1.0);
+                attenuation *= falloff;
+            }
+        }
+
+        // Lighting equation inside the loop
+        vec3 R = reflect(-L, N);
+        float diff = max(dot(N, L), 0.0);
+        float spec = pow(max(dot(R, V), 0.0), u_shininess);
+        vec3 light_color = u_light_color[i] * u_light_intensity[i];
+
+        total_diff += attenuation * diff * light_color;
+        total_spec += attenuation * spec * u_specular_strength * light_color;
+    }
+
+
+    vec3 final_color = ambient + total_diff * color.rgb + total_spec;
+    FragColor = vec4(N, color.a);
+}
+
+
+
+
+\multipass.fs
+
+#version 410 core
+
+uniform float u_shininess;
+uniform float u_specular_strength;
+uniform vec3 u_ambient_color;
+uniform vec3 u_camera_position;
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+uniform vec4 u_color;
+uniform sampler2D u_texture;
+uniform float u_time;
+uniform float u_alpha_cutoff;
+
+uniform vec3 u_light_pos[10];
+uniform vec3 u_light_color[10];
+uniform float u_light_intensity[10];
+uniform int u_light_count; // Put where the 4 is
+uniform int u_light_type[10]; // 0 = point, 1 = directional
+
+uniform vec3 u_multi_light_pos;
+uniform vec3 u_multi_light_color;
+uniform vec3 u_multi_light_dir;
+uniform float u_multi_light_intensity;
+uniform int u_multi_type;
+
+uniform vec3 u_light_dir[10]; // direction for directional lights
+uniform int u_multipass;     // 0 = single pass, 1 = multipass
+uniform int u_light_index;   // Only used if u_multipass == 1
+
+out vec4 FragColor;
+
+uniform float u_alpha_max;
+uniform float u_alpha_min;
+
+uniform sampler2D u_normal_map;
+
+
+
+mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
+  // get edge vectors of the pixel triangle
+  vec3 dp1 = dFdx(p);
+  vec3 dp2 = dFdy(p);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+
+  // solve the linear system
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  // construct a scale-invariant frame
+  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
+  return mat3(normalize(T * invmax), normalize(B * invmax), N);
+}
+
+vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel){
+    normal_pixel = normal_pixel;
+    mat3 TBN = cotangentFrame(N, WP, uv);
+    return normalize(TBN * normal_pixel);
+}
+
+
+void main()
+{
+    vec2 uv = v_uv;
+    vec4 color = u_color;
+    color *= texture(u_texture, v_uv);
+
+    if (color.a < u_alpha_cutoff)
+        discard;
+
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(u_camera_position - v_world_position);
+
+    // Tangent space normal mapping
+    vec3 texture_normal = texture(u_normal_map, uv).xyz;
+    texture_normal = (texture_normal * 2.0) - 1.0;
+    vec3 normal = perturbNormal(v_normal, v_world_position, uv, texture_normal);
+    N = normal;
+
+    vec3 total_diff = vec3(0.0);
+    vec3 total_spec = vec3(0.0);
+    vec3 ambient = vec3(0.0);
+
+
+    // Multi-pass: process only one light, provided by u_light_index
+    int i = u_light_index;
+
+    if (i == 0) {
+        ambient = u_ambient_color * color.rgb;
+    }
+
+    vec3 L_unnorm = u_light_pos[i] - v_world_position;
+    vec3 L;
+    float attenuation = 1.0;
+    float d = length(L_unnorm);
+
+    // Light direction and attenuation
+    if (u_light_type[i] == 1) {
+        L = normalize(L_unnorm);
+        d = max(d, 0.01);
+        attenuation = 1.0 / (d * d);
+    } else if (u_light_type[i] == 3) {
+        L = normalize(-normalize(u_light_dir[i]));
+        attenuation = 1.0;
+    } else if (u_light_type[i] == 2) {
+        vec3 D = normalize(u_light_dir[i]);
+        L = normalize(L_unnorm);
+        d = max(d, 0.01);
+        attenuation = 1.0 / (d * d);
+        float cos_theta = dot(L, D);
+        float cutoff_outer = cos(u_alpha_max);
+        float cutoff_inner = cos(u_alpha_min);
+        if (cos_theta < cutoff_outer) {
+            attenuation = 0.0;
+        } else {
+            float falloff = clamp((cos_theta - cutoff_outer) / (cutoff_inner - cutoff_outer), 0.0, 1.0);
+            attenuation *= falloff;
+        }
+    }
+
+    // Lighting equation
+    vec3 R = reflect(-L, N);
+    float diff = max(dot(N, L), 0.0);
+    float spec = pow(max(dot(R, V), 0.0), u_shininess);
+    vec3 light_color = u_light_color[i] * u_light_intensity[i];
+
+    total_diff += attenuation * diff * light_color;
+    total_spec += attenuation * spec * u_specular_strength * light_color;
+
+    vec3 final_color = ambient + total_diff * color.rgb + total_spec;
+    FragColor = vec4(N, color.a);
+}
+
 
 \skybox.fs
 
@@ -882,4 +1176,69 @@ void main()
     vec3 diffuse = albedo * NdotL * att * u_light_color;
     
     FragColor = vec4(diffuse, 1.0);
+}
+
+
+\fire.vs
+#version 330 core
+
+in vec3 a_vertex;
+in vec3 a_normal;
+in vec2 a_coord;
+
+uniform mat4 u_model;
+uniform mat4 u_viewprojection;
+uniform float u_time;
+
+out vec2 v_uv;
+out float v_distort;
+
+void main()
+{
+    // Pass UVs to fragment shader
+    v_uv = a_coord;
+
+    // Animate the vertex position for fire effect (simple vertical distortion)
+    float distortion = sin(a_vertex.x * 10.0 + u_time * 2.0) * 0.05;
+    v_distort = distortion;
+
+    vec3 pos = a_vertex;
+    pos.y += distortion;
+
+    // Transform to world and clip space
+    vec4 world_pos = u_model * vec4(pos, 1.0);
+    gl_Position = u_viewprojection * world_pos;
+}
+
+\fire.fs
+#version 330 core
+
+in vec2 v_uv;
+in float v_distort;
+
+out vec4 FragColor;
+
+uniform sampler2D u_fire_texture;
+uniform float u_time;
+uniform float u_intensity;
+
+void main()
+{
+    // Animate UVs for a moving fire effect
+    vec2 uv = v_uv;
+    uv.y += u_time * 0.5;
+    uv.x += sin(u_time + v_uv.y * 5.0) * 0.02;
+
+    // Add distortion from vertex shader
+    uv.y += v_distort * 2.0;
+
+    // Sample the fire texture
+    vec4 fireColor = texture(u_fire_texture, uv);
+
+    // Optional: boost intensity and fade out low alpha
+    fireColor.rgb *= u_intensity;
+    if (fireColor.a < 0.05)
+        discard;
+
+    FragColor = fireColor;
 }

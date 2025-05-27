@@ -5,6 +5,23 @@
 #include "light.h"
 #include "../gfx/fbo.h"
 
+#include <algorithm> //sort
+
+#include "camera.h"
+#include "../gfx/gfx.h"
+#include "../gfx/shader.h"
+#include "../gfx/mesh.h"
+#include "../gfx/texture.h"
+
+// #include "../pipeline/deferred.h"
+#include "../pipeline/prefab.h"
+#include "../pipeline/material.h"
+#include "../pipeline/animation.h"
+#include "../utils/utils.h"
+#include "../extra/hdre.h"
+#include "../core/ui.h"
+
+
 //forward declarations
 class Camera;
 class Skeleton;
