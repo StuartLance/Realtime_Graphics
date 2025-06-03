@@ -62,8 +62,12 @@ namespace SCN {
 
 		GFX::FBO* gbuffer_fbo;
 		GFX::FBO* lighting_fbo;
-		/*GFX::Texture* ssao_noise_texture = nullptr;
-		GFX::FBO* ssao_fbo;
+		
+		float inv_width;
+		float inv_height;
+		bool ssao_plus = false;
+		GFX::Texture* ssao_noise_texture = nullptr;
+		GFX::FBO* ssao_FBO;
 		GFX::Shader* ssao_shader = nullptr;
 		GFX::Texture* ssao_texture = nullptr;
 		int ssao_samples = 32;
@@ -71,7 +75,12 @@ namespace SCN {
 		bool ssao_enabled = false;
 		bool ssao_blur = false;
 		bool ssao_lighting = false;
-		std::vector<vec3> ao_sample_points;*/
+		std::vector<vec3> ao_sample_points;
+		
+		// FROM learnopengl.com/Advanced-Lighting/SSAO
+		//std::uniform_real_distribution<float> randomFloats(0.0, 1.0); // random floats between [0.0, 1.0]
+		//std::default_random_engine generator;
+		//std::vector<glm::vec3> ssaoKernel;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -79,6 +88,7 @@ namespace SCN {
 		std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi);
 		void initGBuffer();
 
+		void ssao_setup();
 		//just to be sure we have everything ready for the rendering
 		void setupScene();
 

@@ -142,6 +142,7 @@ void Renderer::renderFire(const Vector3f& position, float scale) {
     // Render
     quad->render(GL_TRIANGLES);
 
+
     // Restore state
     glDisable(GL_BLEND);
     // glEnable(GL_CULL_FACE);

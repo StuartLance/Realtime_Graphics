@@ -8,7 +8,7 @@ gBuffer quad.vs deferred.fs
 singlepass_deferred quad.vs singlepass_deferred.fs
 fill basic.vs fill.fs
 volume basic.vs volume.fs
-ssao basic.vs ssao.fs
+ssao ssao.vs ssao.fs
 
 fire fire.vs fire.fs
 
@@ -68,11 +68,40 @@ void main()
 	gl_Position = vec4( a_vertex, 1.0 );
 }
 
+\ssao.vs
+#version 330 core
+in vec3 a_vertex;
+in vec3 a_normal;
+in vec2 a_coord;
+in vec4 a_color;
+
+out vec3 v_position;
+out vec3 v_world_position;
+out vec3 v_normal;
+out vec2 v_uv;
+out vec4 v_color;
+
+void main(){
+    v_position = a_vertex;
+    v_world_position = a_vertex;
+    v_normal = a_normal;
+    v_uv = a_coord;
+    v_color = a_color;
+    gl_Position = vec4(a_vertex, 1.0);
+}
+
+
+
 \ssao.fs
 #version 330 core
 
 
 // Read more here: https://learnopengl.com/Advanced-Lighting/SSAO
+
+layout (location = 0) out vec4 gPosition;
+layout (location = 1) out vec3 gNormal;
+layout (location = 2) out vec4 gAlbedoSpec;
+
 in vec2 v_uv;
 out vec4 FragColor;
 
@@ -104,11 +133,18 @@ void main()
     if (center_depth >= 1.0)
         discard;
 
-    vec3 origin = reconstructViewPos(v_uv, center_depth);
+    vec3 origin = reconstructViewPos(v_uv, center_depth); // This is the view position of the current fragment
 
     // Reconstruct and normalize normal from G-Buffer
     vec3 normal = texture(u_gbuffer_normal, v_uv).xyz * 2.0 - 1.0;
     normal = normalize(normal);
+
+    // store the fragment position vector in the first gbuffer texture
+    gPosition = vec4(origin, 1.0);
+    // also store the per-fragment normals into the gbuffer
+    gNormal = normal;
+    // and the diffuse per-fragment color, ignore specular
+    gAlbedoSpec.rgb = vec3(0.95);
 
     // Sample random rotation vector
     vec2 noise_uv = v_uv * u_noise_scale;

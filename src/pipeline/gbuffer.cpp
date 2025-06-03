@@ -8,7 +8,7 @@ using namespace SCN;
 
 GFX::FBO* shadow_map_fbo = nullptr; // FBO for shadow mapping
 void Renderer::initGBuffer() {
-   Vector2ui screen = CORE::getWindowSize();
+   
 
    // Create the GBuffer FBO
    gbuffer_fbo = new GFX::FBO();
