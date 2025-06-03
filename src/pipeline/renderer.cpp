@@ -150,62 +150,62 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	initGBuffer();
 }
 
-void Renderer::ssao_setup()
-{
-	if (!ssao_shader)
-	{
-		ssao_shader = GFX::Shader::Get("ssao");
-		if (!ssao_shader)
-		{
-			std::cerr << "Error: SSAO shader not found!" << std::endl;
-			return;
-		}
-	}
+//void Renderer::ssao_setup()
+//{
+//	if (!ssao_shader)
+//	{
+//		ssao_shader = GFX::Shader::Get("ssao");
+//		if (!ssao_shader)
+//		{
+//			std::cerr << "Error: SSAO shader not found!" << std::endl;
+//			return;
+//		}
+//	}
+//
+//
+//
+//	ssao_FBO->create(
+//		screen.x,
+//		screen.y,
+//		1,
+//		GL_RGB,
+//		GL_UNSIGNED_BYTE,
+//		false);
+//
+//	
+//
+//
+//	ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, ssao_plus); 
+//
+//	if (!ssao_noise_texture)
+//	{
+//		int size = 4;
+//		std::vector<float> noise_data(size * size * 3);
+//
+//		for (int i = 0; i < size * size; ++i)
+//		{
+//			float angle = float(rand()) / RAND_MAX * 2.0f * PI;
+//			noise_data[i * 3 + 0] = cos(angle);
+//			noise_data[i * 3 + 1] = sin(angle);
+//			noise_data[i * 3 + 2] = 0.0f; // z = 0
+//		}
+//
+//		ssao_noise_texture = new GFX::Texture();
+//		ssao_noise_texture->create(size, size, GL_RGB, GL_FLOAT, &noise_data[0]);
+//
+//		ssao_noise_texture->bind();
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//	}
+//}
 
 
-
-	ssao_FBO->create(
-		screen.x,
-		screen.y,
-		1,
-		GL_RGB,
-		GL_UNSIGNED_BYTE,
-		false);
-
-	
-
-
-	ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, ssao_plus); 
-
-	if (!ssao_noise_texture)
-	{
-		int size = 4;
-		std::vector<float> noise_data(size * size * 3);
-
-		for (int i = 0; i < size * size; ++i)
-		{
-			float angle = float(rand()) / RAND_MAX * 2.0f * PI;
-			noise_data[i * 3 + 0] = cos(angle);
-			noise_data[i * 3 + 1] = sin(angle);
-			noise_data[i * 3 + 2] = 0.0f; // z = 0
-		}
-
-		ssao_noise_texture = new GFX::Texture();
-		ssao_noise_texture->create(size, size, GL_RGB, GL_FLOAT, &noise_data[0]);
-
-		ssao_noise_texture->bind();
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	}
-}
-
-
-float lerp(float a, float b, float f)
-{
-	return a + f * (b - a);
-}
+//float lerp(float a, float b, float f)
+//{
+//	return a + f * (b - a);
+//}
 
 void Renderer::setupScene()
 {
@@ -214,61 +214,61 @@ void Renderer::setupScene()
 	else
 		skybox_cubemap = nullptr;
 
-	ssao_setup();
+	//ssao_setup();
 
 }
 
-void Renderer::ssao(Camera* camera)
-{
-	if (!ssao_enabled || !ssao_shader) return;
-
-	GFX::Mesh* quad = GFX::Mesh::getQuad();
-
-
-	ssao_FBO->bind();
-	glClearColor(1.0, 1.0, 1.0, 1.0);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	ssao_shader->enable();
-
-	// SEND AO PARAMS
-
-	ssao_shader->setUniform("u_sample_count", ssao_samples);
-	ssao_shader->setUniform("u_sample_radius", ssao_radius);
-	ssao_shader->setUniform3Array("u_sample_pos", 
-									(float*)&ao_sample_points[0], 
-									ssao_samples);
-	ssao_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], 1);
-
-	ssao_shader->setTexture("u_noise_texture", ssao_noise_texture, 2); // slot 2
-	ssao_shader->setUniform("u_noise_scale", Vector2f(float(ssao_FBO->width) / 4.0f, float(ssao_FBO->height) / 4.0f));
-
-	// Bind depth texture
-	ssao_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, 0);
-
-	// SEND CAMERA MATRICES
-	mat4 proj = camera->projection_matrix;
-	mat4 proj_inv = proj;
-	proj_inv.inverse();
-
-	ssao_shader->setUniform("u_p_mat", proj);
-	ssao_shader->setUniform("u_inv_p_mat", proj_inv);
-
-
-	// Send the inverse of the FBO res, for the UVs
-	inv_width = 1.0f / ssao_FBO->color_textures[0]->width;
-	inv_height = 1.0f / ssao_FBO->color_textures[0]->height;
-	vec2 res_inv = vec2(inv_width, inv_height);
-	ssao_shader->setUniform("u_res_inv", res_inv);
-
-	ssao_shader->setTexture("u_depth_texture", , 7);
-
-	quad->render(GL_TRIANGLES);
-
-	ssao_shader->disable();
-	ssao_FBO->unbind();
-
-}
+//void Renderer::ssao(Camera* camera)
+//{
+//	if (!ssao_enabled || !ssao_shader) return;
+//
+//	GFX::Mesh* quad = GFX::Mesh::getQuad();
+//
+//
+//	ssao_FBO->bind();
+//	glClearColor(1.0, 1.0, 1.0, 1.0);
+//	glClear(GL_COLOR_BUFFER_BIT);
+//
+//	ssao_shader->enable();
+//
+//	// SEND AO PARAMS
+//
+//	ssao_shader->setUniform("u_sample_count", ssao_samples);
+//	ssao_shader->setUniform("u_sample_radius", ssao_radius);
+//	ssao_shader->setUniform3Array("u_sample_pos", 
+//									(float*)&ao_sample_points[0], 
+//									ssao_samples);
+//	ssao_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], 1);
+//
+//	ssao_shader->setTexture("u_noise_texture", ssao_noise_texture, 2); // slot 2
+//	ssao_shader->setUniform("u_noise_scale", Vector2f(float(ssao_FBO->width) / 4.0f, float(ssao_FBO->height) / 4.0f));
+//
+//	// Bind depth texture
+//	ssao_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, 0);
+//
+//	// SEND CAMERA MATRICES
+//	mat4 proj = camera->projection_matrix;
+//	mat4 proj_inv = proj;
+//	proj_inv.inverse();
+//
+//	ssao_shader->setUniform("u_p_mat", proj);
+//	ssao_shader->setUniform("u_inv_p_mat", proj_inv);
+//
+//
+//	// Send the inverse of the FBO res, for the UVs
+//	inv_width = 1.0f / ssao_FBO->color_textures[0]->width;
+//	inv_height = 1.0f / ssao_FBO->color_textures[0]->height;
+//	vec2 res_inv = vec2(inv_width, inv_height);
+//	ssao_shader->setUniform("u_res_inv", res_inv);
+//
+//    ssao_shader->setTexture("u_depth_texture", gbuffer_fbo->depth_texture, 0);
+//
+//	quad->render(GL_TRIANGLES);
+//
+//	ssao_shader->disable();
+//	ssao_FBO->unbind();
+//
+//}
 
 
 
