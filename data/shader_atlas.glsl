@@ -71,6 +71,8 @@ void main()
 \ssao.fs
 #version 330 core
 
+
+// Read more here: https://learnopengl.com/Advanced-Lighting/SSAO
 in vec2 v_uv;
 out vec4 FragColor;
 
@@ -1199,99 +1201,92 @@ void main() {
 \fire.fs
 #version 330 core
 
-in vec2 v_uv;         // received from vertex shader
-out vec4 FragColor;   // final output color
+in vec2 v_uv;
 
-// fire uniforms
-uniform float detail_strength = 3.0;
-uniform float scroll_speed = 1.2;
-uniform float fire_height = 1.0;
-uniform float fire_shape = 1.5;
-uniform float fire_thickness = 0.55;
-uniform float fire_sharpness = 1.0;
-uniform float intensity = 1.0;
+out vec4 FragColor;
 
-// noise uniforms
-uniform int noise_octaves = 6;
-uniform float noise_lacunarity = 3.0;
-uniform float noise_gain = 0.5;
-uniform float noise_amplitude = 1.0;
-uniform float noise_frequency = 1.5;
-
-// time
 uniform float u_time;
 
-// 2D hash function
+// Fire uniforms
+uniform float detail_strength;
+uniform float scroll_speed;
+uniform float fire_height;
+uniform float fire_shape;
+uniform float fire_thickness;
+uniform float fire_sharpness;
+uniform float intensity;
+
+// Noise uniforms
+uniform int noise_octaves;
+uniform float noise_lacunarity;
+uniform float noise_gain;
+uniform float noise_amplitude;
+uniform float noise_frequency;
+
+// Hash function
 float hash(vec2 p) {
-    p = fract(p * 0.3183099 + vec2(0.1, 0.1));
+    p = fract(p * 0.3183099 + vec2(0.1));
     p *= 17.0;
     return fract(p.x * p.y * (p.x + p.y));
 }
 
-// 2D value noise (smooth)
+// Value noise
 float noise(vec2 x) {
     vec2 p = floor(x);
     vec2 f = fract(x);
-
     float n =
         hash(p) * (1.0 - f.x) * (1.0 - f.y) +
         hash(p + vec2(1.0, 0.0)) * f.x * (1.0 - f.y) +
         hash(p + vec2(0.0, 1.0)) * (1.0 - f.x) * f.y +
         hash(p + vec2(1.0, 1.0)) * f.x * f.y;
-
     return n;
 }
 
-// Fractional Brownian Motion (fbm)
+// fBM
 float fbm(vec2 p) {
     float total = 0.0;
-    float amplitude = noise_amplitude;
     float frequency = noise_frequency;
-
+    float amplitude = noise_amplitude;
     for (int i = 0; i < noise_octaves; ++i) {
         total += noise(p * frequency) * amplitude;
         frequency *= noise_lacunarity;
         amplitude *= noise_gain;
     }
-
     return total * 0.5;
 }
 
 void main() {
     vec2 uv = v_uv;
-
-    // Modify UV for animation and centering
     vec2 modified_uv = -uv;
     modified_uv.x = mod(modified_uv.x, 1.0) - 0.5;
-    modified_uv.y += 0.84;
+    modified_uv.y += 0.4;
 
-    // Scroll noise over time
-    float scroll = scroll_speed * detail_strength * u_time;
+    float scroll = scroll_speed * detail_strength * u_time * 0.001;
 
-    // Sample noise
     float n = fbm(detail_strength * modified_uv - vec2(0.0, scroll));
 
-    // Fire shape and masking
     float fire_intensity = intensity - 16.0 * fire_sharpness * pow(
         max(0.0,
-            length(
-                modified_uv * vec2((1.0 / fire_thickness) + modified_uv.y * fire_shape, 1.0 / fire_height)
-            ) - n * max(0.0, modified_uv.y + 0.25)
-        ), 1.2);
-
-    float fire_i = n * fire_intensity * (1.5 - pow(uv.y, 14.0));
-    fire_i = clamp(fire_i, 0.0, 1.0);
-
-    // Fire gradient color
-    vec3 fire_color = vec3(
-        1.5 * fire_i,
-        1.5 * pow(fire_i, 3.0),
-        pow(fire_i, 6.0)
+            length(modified_uv * vec2((1.0 / fire_thickness) + modified_uv.y * fire_shape, 1.0 / fire_height))
+            - n * max(0.0, modified_uv.y + 0.25)
+        ),
+        1.2
     );
 
-    // Alpha based on intensity and vertical fade
-    float alpha = fire_intensity * (1.0 - pow(uv.y, 3.0));
-    vec4 final_color = vec4(mix(vec3(0.0), fire_color, alpha), alpha);
+    float fire_intensity1 = n * fire_intensity * (1.5 - pow(uv.y, 14.0));
+    fire_intensity1 = clamp(fire_intensity1, 0.0, 1.0);
 
-    FragColor = final_color;
+    vec3 fire_color = vec3(
+        1.5 * fire_intensity1,
+        1.5 * pow(fire_intensity1, 3.0),
+        pow(fire_intensity1, 6.0)
+    );
+
+    float alpha = fire_intensity * (1.0 - pow(uv.y, 3.0));
+    vec3 final_rgb = mix(vec3(0.0), fire_color, alpha);
+
+    FragColor = vec4(final_rgb, alpha);
+    //float strength = sin((v_uv.y + u_time) * 0.005);
+    //vec3 fire = vec3(1.0, strength, 0.0);
+    //FragColor = vec4(fire, 1.0);
 }

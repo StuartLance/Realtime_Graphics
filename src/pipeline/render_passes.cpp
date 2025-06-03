@@ -95,7 +95,11 @@ void Renderer::renderDeferred()
 }
 
 void Renderer::renderFire(const Vector3f& position, float scale) {
+    GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+
     GFX::Shader* shader = GFX::Shader::Get("fire");
+
     if (!shader) return;
 
     shader->enable();
@@ -104,7 +108,13 @@ void Renderer::renderFire(const Vector3f& position, float scale) {
     Matrix44 model;
     model.setTranslation(position.x, position.y, position.z);
     model.scale(scale, scale, scale);
-    float t = getTime();
+
+    #ifdef WIN32
+        float t = (float)(getTime());
+    #else
+        float t = (float)(395500000 - getTime()); //396755008
+    #endif
+
     // Upload uniforms
     shader->setUniform("u_model", model);
     shader->setUniform("u_viewprojection", Camera::current->viewprojection_matrix);
@@ -115,32 +125,26 @@ void Renderer::renderFire(const Vector3f& position, float scale) {
     shader->setUniform("detail_strength", 3.0f);
     shader->setUniform("scroll_speed", 1.2f);
     shader->setUniform("fire_height", 1.0f);
+    shader->setUniform("fire_shape", 1.0f);
+    shader->setUniform("fire_thickness", 1.0f);
+    shader->setUniform("fire_sharpness", 1.0f);
+    shader->setUniform("noise_octaves", 1);
+    shader->setUniform("noise_lacunarity", 1.0f);
+    shader->setUniform("noise_gain", 1.0f);
+    shader->setUniform("noise_amplitude", 1.0f);
+    shader->setUniform("noise_frequency", 1.0f);
 
     // Enable blending
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     //glDisable(GL_CULL_FACE); // Optional
-    // Set up attributes manually
-    GFX::Mesh* quad = GFX::Mesh::getQuad();
-
-    glBindVertexArray(quad->interleaved_vao_id); // Optional: only if you already have a VAO
-
-    // Position attribute (location = 0)
-    glBindBuffer(GL_ARRAY_BUFFER, quad->vertices_vbo_id);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // UV attribute (location = 1)
-    glBindBuffer(GL_ARRAY_BUFFER, quad->uvs_vbo_id);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
-    glEnableVertexAttribArray(1);
 
     // Render
     quad->render(GL_TRIANGLES);
 
     // Restore state
     glDisable(GL_BLEND);
-   // glEnable(GL_CULL_FACE);
+    // glEnable(GL_CULL_FACE);
     shader->disable();
 }
 

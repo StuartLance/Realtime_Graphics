@@ -311,7 +311,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
             renderMeshWithMaterial(command.model, command.mesh, command.material, false);
         }
        // lighting_fbo->unbind();
-        //lighting_fbo->color_textures[0]->toViewport();
+       //lighting_fbo->color_textures[0]->toViewport();
 	}
 	else {
         // Render opaque objects first
@@ -347,7 +347,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	//shader = GFX::Shader::Get("texture"); // Change here to Gbuffer shader
 
 	if (lab == 2) {
-		shader = GFX::Shader::Get("singlepass_deferred");
+		shader = GFX::Shader::Get("singlepass");
 		//light_pass_shader = GFX::Shader::Get("light_pass");
 
 		
