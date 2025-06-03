@@ -150,6 +150,8 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	initGBuffer();
 }
 
+// Build fails when uncommented
+
 //void Renderer::ssao_setup()
 //{
 //	if (!ssao_shader)
@@ -162,8 +164,6 @@ Renderer::Renderer(const char* shader_atlas_filename)
 //		}
 //	}
 //
-//
-//
 //	ssao_FBO->create(
 //		screen.x,
 //		screen.y,
@@ -172,10 +172,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 //		GL_UNSIGNED_BYTE,
 //		false);
 //
-//	
-//
-//
-//	ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, ssao_plus); 
+//	ao_sample_points = generateSpherePoints(ssao_samples, 1.0f, ssao_plus);
 //
 //	if (!ssao_noise_texture)
 //	{
@@ -184,9 +181,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 //
 //		for (int i = 0; i < size * size; ++i)
 //		{
-//			float angle = float(rand()) / RAND_MAX * 2.0f * PI;
-//			noise_data[i * 3 + 0] = cos(angle);
-//			noise_data[i * 3 + 1] = sin(angle);
+//			float angle = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f * static_cast<float>(PI);
+//			noise_data[i * 3 + 0] = cosf(angle);
+//			noise_data[i * 3 + 1] = sinf(angle);
 //			noise_data[i * 3 + 2] = 0.0f; // z = 0
 //		}
 //
