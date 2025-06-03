@@ -36,8 +36,25 @@ namespace SCN {
         GFX::Mesh* mesh; // Contains the geometry of the entity
         SCN::Material* material; // Material in scene not GFX. Is the recipe for putting together the surafce
         Matrix44 model; // Contains location of entity
-
     };
+
+	struct sFire {
+		Vector3f position;
+		float scale;
+		int noise_octaves;
+		float intensity;
+		float scroll_speed;
+		float fire_height;
+		float fire_shape;
+		float fire_thickness;
+		float fire_sharpness;
+		float detail_strength;
+		float noise_lacunarity;
+		float noise_gain;
+		float noise_frequency;
+		float noise_amplitude;
+	};
+
 	class Prefab;
 	class Material;
 
@@ -55,6 +72,8 @@ namespace SCN {
         std::vector<SCN::LightEntity*> light_list; // Contains all the lights in the scene
         GFX::Mesh sphere;
 		int lab;
+
+		std::vector<sFire> fire_list; // List of fire entities
 
 		GFX::Texture* skybox_cubemap;
 		Vector2ui screen;
@@ -86,6 +105,7 @@ namespace SCN {
 		Renderer(const char* shaders_atlas_filename );
 		void ssao(Camera* camera);
 		std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi);
+		void initFirelist();
 		void initGBuffer();
 
 		void ssao_setup();
@@ -99,7 +119,7 @@ namespace SCN {
 		void renderVolumes(Camera* camera);
 		void renderDeferred();
 		void GBuffer();
-        void renderFire(const Vector3f& position, float scale);
+        void renderFire(sFire firelist);
         void parseNodes(SCN::Node* node, Camera* cam);
 
 		

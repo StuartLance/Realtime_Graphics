@@ -27,107 +27,95 @@ struct compareDrawCommands { // Functor for sorting opaque draw commands by dist
 	}
 };
 
-// GFX::FBO* shadow_map_fbo = nullptr; // FBO for shadow mapping
-//void Renderer::initGBuffer() {
-//	Vector2ui screen = CORE::getWindowSize();
+
+
+//std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi) {
+//	std::vector<vec3> points;
+//	points.resize(num);
 //
-//	// Create the GBuffer FBO
-//	gbuffer_fbo = new GFX::FBO();
+//	for (int i = 0; i < num; i++) {
+//		float u = random();
+//		float v = random();
 //
-//	if (!gbuffer_fbo->create(screen.x, screen.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true))
-//	{
-//		std::cerr << "Error: Failed to create GBuffer FBO." << std::endl;
-//		return;
+//		float theta = u * 2.0f * PI;
+//		float phi = acos(2.0f * v - 1.0f);
+//		float r = cbrt(random() * 0.9f + 0.1f) * radius;
+//
+//		vec3 p;
+//		p.x = r * sin(phi) * cos(theta);
+//		p.y = r * sin(phi) * sin(theta);
+//		p.z = r * cos(phi);
+//
+//		if (hemi && p.z < 0.0f) p.z *= -1.0f;
+//
+//		points[i] = p;
 //	}
-//	
-//	//gbuffer_fbo.setTexture(GFX::Texture::Get("gbuffer_diffuse"), 0); Alreaady done
 //
-//	gbuffer_fbo->color_textures[0]->filename = "Albedo";
-//	gbuffer_fbo->color_textures[1]->filename = "Normal";
-//	gbuffer_fbo->depth_texture->filename = "Depth";
-//
-//
-//	lighting_fbo = new GFX::FBO();
-//
-//
-//
-//
-//	lighting_fbo->create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, true);
-//	lighting_fbo->color_textures[0]->filename = "Lighting";
-//	lighting_fbo->depth_texture->filename = "Depth_Lightning";
-//
-//	//ssao_fbo = new GFX::FBO();
-//	//ssao_fbo->create(screen.x, screen.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, false);
-//
-//
-//	gbuffer_fbo->bind();
-//
-//
-//	// Check FBO completeness
-//	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-//	if (status != GL_FRAMEBUFFER_COMPLETE)
-//	{
-//		std::cerr << "Error: GBuffer FBO is incomplete. Status: " << status << std::endl;
-//
-//		switch (status)
-//		{
-//		case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT:
-//			std::cerr << "Incomplete attachment." << std::endl;
-//			break;
-//		case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
-//			std::cerr << "Missing attachment." << std::endl;
-//			break;
-//		case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
-//			std::cerr << "Incomplete draw buffer." << std::endl;
-//			break;
-//		case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
-//			std::cerr << "Incomplete read buffer." << std::endl;
-//			break;
-//		case GL_FRAMEBUFFER_UNSUPPORTED:
-//			std::cerr << "Unsupported framebuffer format." << std::endl;
-//			break;
-//		default:
-//			std::cerr << "Unknown error." << std::endl;
-//			break;
-//		}
-//
-//		gbuffer_fbo->unbind();
-//		return;
-//	}
-//	
-//	//gbuffer_fbo.enableAllBuffers();
-//	gbuffer_fbo->unbind();
-//	std::cout << "GBuffer FBO successfully created and is complete." << std::endl;
-//
+//	return points;
 //}
-
-std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi) {
-	std::vector<vec3> points;
-	points.resize(num);
-
-	for (int i = 0; i < num; i++) {
-		float u = random();
-		float v = random();
-
-		float theta = u * 2.0f * PI;
-		float phi = acos(2.0f * v - 1.0f);
-		float r = cbrt(random() * 0.9f + 0.1f) * radius;
-
-		vec3 p;
-		p.x = r * sin(phi) * cos(theta);
-		p.y = r * sin(phi) * sin(theta);
-		p.z = r * cos(phi);
-
-		if (hemi && p.z < 0.0f) p.z *= -1.0f;
-
-		points[i] = p;
-	}
-
-	return points;
-}
 
 
 //some globals
+void Renderer::initFirelist() {
+	sFire fire_1 = {
+	   Vector3f(-0.6f, 1.8f, -1.2f), // Position of the fire
+	   1.5f, // Scale of the fire
+	   6,    // noise octaves
+	   1.0f,        //intensity,
+	   1.2f,     //scroll_speed,
+	   1.0f,      //fire_height,
+	   1.5f,       //fire_shape,
+	   0.55f,   //fire_thickness,
+	   1.0f,   //fire_sharpness,
+	   3.0f,  //detail_strength,
+	   3.0f, //noise_lacunarity,
+	   0.5f,       //noise_gain,
+	   1.5f,  //noise_frequency,
+	   1.0f   //noise_amplitude
+	};
+
+	sFire fire_2 = {
+	   Vector3f(1.2f, 3.5f, -3.0f), // Position of the fire
+	   1.0f, // Scale of the fire
+	   9,    // noise octaves
+	   2.0f,        //intensity,
+	   1.5f,     //scroll_speed,
+	   1.2f,      //fire_height,
+	   1.7f,       //fire_shape,
+	   1.55f,   //fire_thickness,
+	   1.6f,   //fire_sharpness,
+	   3.0f,  //detail_strength,
+	   3.0f, //noise_lacunarity,
+	   0.5f,       //noise_gain,
+	   1.5f,  //noise_frequency,
+	   1.0f   //noise_amplitude
+	};
+
+	sFire fire_3 = {
+	   Vector3f(-1.0f, 1.8f, -0.7f), // Position of the fire
+	   1.5f, // Scale of the fire
+	   5,    // noise octaves
+	   0.5f,        //intensity,
+	   0.5f,     //scroll_speed,
+	   1.2f,      //fire_height,
+	   1.7f,       //fire_shape,
+	   0.55f,   //fire_thickness,
+	   1.6f,   //fire_sharpness,
+	   3.0f,  //detail_strength,
+	   3.0f, //noise_lacunarity,
+	   0.5f,       //noise_gain,
+	   1.5f,  //noise_frequency,
+	   1.0f   //noise_amplitude
+	};
+
+	// Add fires to the list
+	fire_list.push_back(fire_1);
+	fire_list.push_back(fire_2);
+	fire_list.push_back(fire_3);
+}
+
+
+
 
 Renderer::Renderer(const char* shader_atlas_filename)
 {
@@ -147,6 +135,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.createSphere(1.0f);
 	sphere.uploadToVRAM();
 
+	initFirelist();
 	initGBuffer();
 }
 
@@ -346,10 +335,14 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	//lighting_fbo->depth_texture->toViewport();
 
 	if (lab == 2) {
-     //   lighting_fbo->bind();
+		//lighting_fbo->bind();
+		
 		renderDeferred();
-        renderFire(Vector3(2.0f, 0.0f, -5.0f), 1.5f); // Position and size
-        // Render transparent objects after
+        
+		for (const sFire& fire : fire_list) {
+			renderFire(fire); // Position and size
+		}
+		// Render transparent objects after
         for (const sDrawCommand& command : transparentObjects) {
             renderMeshWithMaterial(command.model, command.mesh, command.material, false);
         }

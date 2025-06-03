@@ -94,25 +94,22 @@ void Renderer::renderDeferred()
     shader->disable();
 }
 
-void Renderer::renderFire(const Vector3f& position, float scale) {
-    GFX::Mesh* quad = GFX::Mesh::getQuad();
-
-
+void Renderer::renderFire(sFire firelist) {
     GFX::Shader* shader = GFX::Shader::Get("fire");
-
     if (!shader) return;
 
     shader->enable();
 
     // Build model matrix
     Matrix44 model;
-    model.setTranslation(position.x, position.y, position.z);
-    model.scale(scale, scale, scale);
-
+    model.setTranslation(firelist.position.x, firelist.position.y, firelist.position.z);
+    model.scale(firelist.scale, firelist.scale, firelist.scale);
+    // Upload uniforms
     #ifdef WIN32
-        float t = (float)(getTime());
+        float t = (float)(948500000.0f - getTime());
+        if (t < 0) t *= -1.0f; // Ensure time is positive
     #else
-        float t = (float)(395500000 - getTime()); //396755008
+        float t = (float)(898000000 - getTime()); //396755008
     #endif
 
     // Upload uniforms
@@ -121,33 +118,47 @@ void Renderer::renderFire(const Vector3f& position, float scale) {
     shader->setUniform("u_time", t);
 
     // Optional tuning
-    shader->setUniform("intensity", 1.0f);
-    shader->setUniform("detail_strength", 3.0f);
-    shader->setUniform("scroll_speed", 1.2f);
-    shader->setUniform("fire_height", 1.0f);
-    shader->setUniform("fire_shape", 1.0f);
-    shader->setUniform("fire_thickness", 1.0f);
-    shader->setUniform("fire_sharpness", 1.0f);
-    shader->setUniform("noise_octaves", 1);
-    shader->setUniform("noise_lacunarity", 1.0f);
-    shader->setUniform("noise_gain", 1.0f);
-    shader->setUniform("noise_amplitude", 1.0f);
-    shader->setUniform("noise_frequency", 1.0f);
+    shader->setUniform("intensity", firelist.intensity);
+    shader->setUniform("detail_strength", firelist.detail_strength);
+    shader->setUniform("scroll_speed", firelist.scroll_speed);
+    shader->setUniform("fire_height", firelist.fire_height);
+    shader->setUniform("fire_shape", firelist.fire_shape);
+    shader->setUniform("fire_thickness", firelist.fire_thickness);
+    shader->setUniform("fire_sharpness", firelist.fire_sharpness);
+    shader->setUniform("noise_octaves", firelist.noise_octaves);
+    shader->setUniform("noise_lacunarity", firelist.noise_lacunarity);
+    shader->setUniform("noise_gain", firelist.noise_gain);
+    shader->setUniform("noise_amplitude", firelist.noise_amplitude);
+    shader->setUniform("noise_frequency", firelist.noise_frequency);
 
     // Enable blending
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     //glDisable(GL_CULL_FACE); // Optional
+    // Set up attributes manually
+    GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+    // glBindVertexArray(quad->interleaved_vao_id); // Optional: only if you already have a VAO
+
+    // Position attribute (location = 0)
+    glBindBuffer(GL_ARRAY_BUFFER, quad->vertices_vbo_id);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // UV attribute (location = 1)
+    glBindBuffer(GL_ARRAY_BUFFER, quad->uvs_vbo_id);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(1);
 
     // Render
     quad->render(GL_TRIANGLES);
-
 
     // Restore state
     glDisable(GL_BLEND);
     // glEnable(GL_CULL_FACE);
     shader->disable();
 }
+
 
 void Renderer::renderVolumes(Camera* camera)
 {
